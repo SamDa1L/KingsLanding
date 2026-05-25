@@ -1,0 +1,9 @@
+[gd_scene format=3 uid="uid://c20j81jy3ckhe"]
+
+[ext_resource type="TileSet" uid="uid://dq6hk7no1sfir" path="res://assets/tilesets/MasterSimple_tileset.tres" id="1_0iv6a"]
+
+[node name="Node2D" type="Node2D" unique_id=2127170135]
+
+[node name="TileMapLayer" type="TileMapLayer" parent="." unique_id=925532939]
+tile_map_data = PackedByteArray(0, 0, 0, 0, 0, 0, 0, 0, 10, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 10, 0, 4, 0, 0, 0)
+tile_set = ExtResource("1_0iv6a")

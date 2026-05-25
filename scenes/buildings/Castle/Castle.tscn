@@ -1,0 +1,58 @@
+[gd_scene format=3 uid="uid://cqa7fcpb8lkx"]
+
+[ext_resource type="Script" uid="uid://bj1lmomaw0rvc" path="res://scripts/buildings/BuildingBase.gd" id="1_gfsvf"]
+[ext_resource type="Texture2D" uid="uid://du0upguyajhrw" path="res://assets/art/buildings/castle/CastleLevel_1.png" id="2_hmpcj"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_interaction"]
+size = Vector2(40, 39)
+
+[node name="Castle" type="Area2D" unique_id=135548049]
+collision_layer = 2
+collision_mask = 0
+script = ExtResource("1_gfsvf")
+display_name = "Castle"
+fill_color = Color(1, 1, 1, 1)
+label_offset_y = 96.0
+interaction_size = Vector2(210, 230)
+storage_capacity = 0
+
+[node name="SelectionOutline" type="Polygon2D" parent="." unique_id=199512752]
+visible = false
+z_index = 5
+color = Color(1, 0.89, 0.22, 0.45)
+polygon = PackedVector2Array(-110, 80, 110, 80, 110, -86, 72, -122, 0, -142, -72, -122, -110, -86)
+
+[node name="Visual" type="Sprite2D" parent="." unique_id=620975540]
+scale = Vector2(0.05, 0.05)
+texture = ExtResource("2_hmpcj")
+
+[node name="ReadyIndicator" type="Polygon2D" parent="." unique_id=1174017179]
+visible = false
+z_index = 8
+position = Vector2(84, -120)
+color = Color(1, 0.82, 0.16, 1)
+polygon = PackedVector2Array(6, 14)
+uv = PackedVector2Array(6, 14)
+
+[node name="Label" type="Label" parent="." unique_id=1914760537]
+z_index = 10
+offset_left = -120.0
+offset_top = 24.0
+offset_right = 120.0
+offset_bottom = 47.0
+theme_override_font_sizes/font_size = 2
+text = "Castle"
+horizontal_alignment = 1
+
+[node name="StorageLabel" type="Label" parent="." unique_id=1171907472]
+visible = false
+z_index = 10
+offset_left = -80.0
+offset_top = 122.0
+offset_right = 80.0
+offset_bottom = 145.0
+horizontal_alignment = 1
+
+[node name="InteractionShape" type="CollisionShape2D" parent="." unique_id=1747790105]
+position = Vector2(0, 4.5)
+shape = SubResource("RectangleShape2D_interaction")

@@ -1,0 +1,13 @@
+[gd_scene format=4 uid="uid://c3lwxljlaqkb4"]
+
+[ext_resource type="TileSet" uid="uid://dq6hk7no1sfir" path="res://assets/tilesets/MasterSimple_tileset.tres" id="1_1juc8"]
+
+[node name="Node2D" type="Node2D" unique_id=1439372908]
+
+[node name="TileMapLayer" type="TileMapLayer" parent="." unique_id=2036031147]
+tile_map_data = PackedByteArray("AAAAAAAAAAAKAAEAAAABAAAAAAAHAAAAAAD//wAAAAAHAAAAAAABAP//AAAIAAAAAAD//wEAAAAIAAAAAAABAAEAAAAIAAAAAAAAAP//AAAHAAAAAAD/////AAAIAAAAAAAAAAEAAAAHAAAAAAA=")
+tile_set = ExtResource("1_1juc8")
+
+[node name="TileMapLayer" type="TileMapLayer" parent="TileMapLayer" unique_id=2047986134]
+tile_map_data = PackedByteArray("AAAAAAAAAAAKAAEAAAABAAAAAAALAAAAAAD//wAAAAAIAAYAAAD//wEAAAAIAAUAAAABAP//AAALAAAAAAAAAP//AAAIAAYAAAA=")
+tile_set = ExtResource("1_1juc8")

@@ -1,0 +1,9 @@
+[gd_scene format=3]
+
+[node name="TimeDisplay" type="Label"]
+offset_left = 16.0
+offset_top = 16.0
+offset_right = 220.0
+offset_bottom = 44.0
+text = "AM 08:00"
+theme_override_font_sizes/font_size = 22

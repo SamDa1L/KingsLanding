@@ -1,0 +1,59 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="PackedScene" path="res://ui/TimeDisplay.tscn" id="1_time"]
+[ext_resource type="Script" path="res://scripts/ui/Hud.gd" id="2_script"]
+
+[node name="Hud" type="CanvasLayer"]
+script = ExtResource("2_script")
+
+[node name="TimeDisplay" parent="." instance=ExtResource("1_time")]
+
+[node name="ResourcePanel" type="PanelContainer" parent="."]
+offset_left = 16.0
+offset_top = 52.0
+offset_right = 360.0
+offset_bottom = 92.0
+
+[node name="ResourceLabel" type="Label" parent="ResourcePanel"]
+custom_minimum_size = Vector2(330, 32)
+text = "Food 0   Wood 0   Stone 0"
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_font_sizes/font_size = 18
+
+[node name="VillagerPanel" type="PanelContainer" parent="."]
+offset_left = 16.0
+offset_top = 100.0
+offset_right = 360.0
+offset_bottom = 140.0
+
+[node name="VillagerLabel" type="Label" parent="VillagerPanel"]
+custom_minimum_size = Vector2(330, 32)
+text = "Villagers Idle 0   Moving 0   Working 0"
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_font_sizes/font_size = 16
+
+[node name="BuildingPanel" type="PanelContainer" parent="."]
+offset_left = 16.0
+offset_top = 148.0
+offset_right = 360.0
+offset_bottom = 236.0
+
+[node name="BuildingLabel" type="Label" parent="BuildingPanel"]
+custom_minimum_size = Vector2(330, 80)
+text = "Selected Building\nNone\nClick a production building."
+vertical_alignment = 1
+theme_override_font_sizes/font_size = 16
+
+[node name="MessagePanel" type="PanelContainer" parent="."]
+offset_left = 16.0
+offset_top = 244.0
+offset_right = 460.0
+offset_bottom = 284.0
+
+[node name="MessageLabel" type="Label" parent="MessagePanel"]
+custom_minimum_size = Vector2(430, 32)
+text = "Territory running. Click buildings to collect."
+vertical_alignment = 1
+theme_override_font_sizes/font_size = 16

@@ -1,0 +1,23 @@
+[gd_scene format=3 uid="uid://bispnhs05mue4"]
+
+[ext_resource type="PackedScene" path="res://scenes/map/PrototypeMap.tscn" id="1_map"]
+[ext_resource type="Script" uid="uid://3m5kdhxecnpk" path="res://scripts/world/World.gd" id="2_script"]
+[ext_resource type="PackedScene" path="res://ui/Hud.tscn" id="3_hud"]
+
+[node name="World" type="Node2D" unique_id=98121935]
+script = ExtResource("2_script")
+
+[node name="MainCamera" type="Camera2D" parent="." unique_id=1926225148]
+zoom = Vector2(0.7, 0.7)
+
+[node name="MapRoot" type="Node2D" parent="." unique_id=1928170377]
+
+[node name="PrototypeMap" parent="MapRoot" unique_id=1926039056 instance=ExtResource("1_map")]
+
+[node name="BuildingRoot" type="Node2D" parent="." unique_id=148800891]
+
+[node name="VillagerRoot" type="Node2D" parent="." unique_id=1353942187]
+
+[node name="UIRoot" type="CanvasLayer" parent="." unique_id=1816738067]
+
+[node name="Hud" parent="UIRoot" unique_id=901830455 instance=ExtResource("3_hud")]
