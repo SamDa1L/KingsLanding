@@ -7,6 +7,11 @@ const DEFAULT_STORAGE_CAPACITY_BY_BUILDING: Dictionary = {
 	MapTypes.BuildingType.LUMBER_CAMP: 30.0,
 	MapTypes.BuildingType.QUARRY: 20.0,
 }
+const DEFAULT_WORKER_CAPACITY_BY_BUILDING: Dictionary = {
+	MapTypes.BuildingType.FARM: 4,
+	MapTypes.BuildingType.LUMBER_CAMP: 6,
+	MapTypes.BuildingType.QUARRY: 6,
+}
 
 var building_type: int = MapTypes.BuildingType.HOUSE
 var position: Vector2i = Vector2i.ZERO
@@ -18,6 +23,8 @@ var capacity: int = 0
 var is_active: bool = true
 var stored_resources: Dictionary = {}
 var storage_capacity: Dictionary = {}
+var worker_count: int = 0
+var worker_capacity: int = 0
 
 
 func _init() -> void:
@@ -35,7 +42,10 @@ func setup(next_building_type: int) -> void:
 	stored_amount = 0
 	capacity = 0
 	is_active = true
+	worker_count = 0
+	worker_capacity = 0
 	_configure_storage_defaults()
+	_configure_worker_defaults()
 	_sync_legacy_storage_values()
 
 
@@ -51,6 +61,39 @@ func get_building_label() -> String:
 
 func can_store_resources() -> bool:
 	return is_production_building() and get_storage_capacity(resource_type) > 0.0
+
+
+func has_workers() -> bool:
+	return worker_capacity > 0
+
+
+func get_worker_capacity() -> int:
+	return max(worker_capacity, 0)
+
+
+func get_worker_count() -> int:
+	return max(worker_count, 0)
+
+
+func set_worker_count(next_worker_count: int) -> int:
+	worker_count = clampi(next_worker_count, 0, get_worker_capacity())
+	return worker_count
+
+
+func add_workers(amount: int) -> int:
+	if amount <= 0:
+		return get_worker_count()
+	return set_worker_count(worker_count + amount)
+
+
+func remove_workers(amount: int) -> int:
+	if amount <= 0:
+		return get_worker_count()
+	return set_worker_count(worker_count - amount)
+
+
+func can_accept_more_workers() -> bool:
+	return get_worker_count() < get_worker_capacity()
 
 
 func add_to_storage(next_resource_type: StringName, amount: float) -> float:
@@ -129,6 +172,16 @@ func _configure_storage_defaults() -> void:
 	storage_capacity[resource_type] = capacity_value
 
 
+func _configure_worker_defaults() -> void:
+	worker_capacity = _get_default_worker_capacity(building_type)
+	worker_count = 1 if worker_capacity > 0 else 0
+	worker_count = clampi(worker_count, 0, worker_capacity)
+
+
+func _get_default_worker_capacity(next_building_type: int) -> int:
+	return int(DEFAULT_WORKER_CAPACITY_BY_BUILDING.get(next_building_type, 0))
+
+
 func _get_default_storage_capacity(next_building_type: int) -> float:
 	return float(DEFAULT_STORAGE_CAPACITY_BY_BUILDING.get(next_building_type, 0.0))
 
@@ -145,10 +198,10 @@ func _sync_legacy_storage_values() -> void:
 func _get_resource_label(next_resource_type: StringName) -> String:
 	match next_resource_type:
 		&"food":
-			return "Food"
+			return "食物"
 		&"wood":
-			return "Wood"
+			return "木材"
 		&"stone":
-			return "Stone"
+			return "石料"
 		_:
-			return "Resource"
+			return "资源"

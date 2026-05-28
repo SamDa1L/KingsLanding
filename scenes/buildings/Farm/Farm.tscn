@@ -1,9 +1,35 @@
 [gd_scene format=3 uid="uid://c20j81jy3ckhe"]
 
 [ext_resource type="TileSet" uid="uid://dq6hk7no1sfir" path="res://assets/tilesets/MasterSimple_tileset.tres" id="1_0iv6a"]
+[ext_resource type="Script" uid="uid://brpf82v6qp08d" path="res://scripts/buildings/HoverArea.gd" id="2_hover_area"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_hover"]
+size = Vector2(48, 32)
 
 [node name="Node2D" type="Node2D" unique_id=2127170135]
+
+[node name="PlacementAnchor" type="Marker2D" parent="." unique_id=1931112539]
+position = Vector2(8, 16)
+
+[node name="VillagerPoint" type="Marker2D" parent="."]
+position = Vector2(16, 28)
 
 [node name="TileMapLayer" type="TileMapLayer" parent="." unique_id=925532939]
 tile_map_data = PackedByteArray(0, 0, 0, 0, 0, 0, 0, 0, 10, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 10, 0, 4, 0, 0, 0)
 tile_set = ExtResource("1_0iv6a")
+
+[node name="HoverArea" type="Area2D" parent="." unique_id=536141752]
+position = Vector2(16, 8)
+collision_layer = 2
+collision_mask = 0
+script = ExtResource("2_hover_area")
+hover_size = Vector2(48, 32)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="HoverArea" unique_id=828761872]
+shape = SubResource("RectangleShape2D_hover")
+
+[node name="HoverPreview" type="Line2D" parent="HoverArea" unique_id=177948499]
+z_index = 100
+points = PackedVector2Array(-24, -16, 24, -16, 24, 16, -24, 16, -24, -16)
+width = 2.0
+default_color = Color(1, 0.88, 0.24, 0.85)

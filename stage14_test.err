@@ -1,0 +1,5 @@
+ERROR: Stage14 validation failed: event log updates with tax feedback expected true
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _assert_true (res://tests/Stage14Validation.gd:54)
+       [1] _ready (res://tests/Stage14Validation.gd:36)

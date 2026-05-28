@@ -4,14 +4,14 @@ const VILLAGER_SCENE := preload("res://scenes/characters/villagersPawn/Pawn.tscn
 const BUILDING_SCENE := preload("res://scenes/buildings/BuildingBase.tscn")
 
 const BUILDING_DEFINITIONS: Array[Dictionary] = [
-	{"name": "Castle", "position": Vector2(0, 0), "color": Color(0.44, 0.44, 0.50, 1.0), "label": "Castle", "size": Vector2(120, 104)},
-	{"name": "HouseA", "position": Vector2(-220, 112), "color": Color(0.60, 0.38, 0.22, 1.0), "label": "House", "size": Vector2(86, 74)},
-	{"name": "HouseB", "position": Vector2(-280, 38), "color": Color(0.62, 0.39, 0.24, 1.0), "label": "House", "size": Vector2(86, 74)},
-	{"name": "HouseC", "position": Vector2(-150, 44), "color": Color(0.58, 0.36, 0.21, 1.0), "label": "House", "size": Vector2(86, 74)},
-	{"name": "Farm", "position": Vector2(340, 120), "color": Color(0.76, 0.62, 0.25, 1.0), "label": "Farm", "size": Vector2(110, 88), "resource": &"food", "rate": 0.45, "capacity": 12},
-	{"name": "LumberCamp", "position": Vector2(-330, -135), "color": Color(0.12, 0.39, 0.16, 1.0), "label": "Lumber", "size": Vector2(104, 82), "resource": &"wood", "rate": 0.35, "capacity": 10},
-	{"name": "Quarry", "position": Vector2(330, -135), "color": Color(0.45, 0.45, 0.45, 1.0), "label": "Quarry", "size": Vector2(104, 82), "resource": &"stone", "rate": 0.25, "capacity": 8},
-	{"name": "Warehouse", "position": Vector2(0, 210), "color": Color(0.50, 0.33, 0.20, 1.0), "label": "Storage", "size": Vector2(110, 82)},
+	{"name": "Castle", "position": Vector2(0, 0), "color": Color(0.44, 0.44, 0.50, 1.0), "label": "城堡", "size": Vector2(120, 104)},
+	{"name": "HouseA", "position": Vector2(-220, 112), "color": Color(0.60, 0.38, 0.22, 1.0), "label": "住宅", "size": Vector2(86, 74)},
+	{"name": "HouseB", "position": Vector2(-280, 38), "color": Color(0.62, 0.39, 0.24, 1.0), "label": "住宅", "size": Vector2(86, 74)},
+	{"name": "HouseC", "position": Vector2(-150, 44), "color": Color(0.58, 0.36, 0.21, 1.0), "label": "住宅", "size": Vector2(86, 74)},
+	{"name": "Farm", "position": Vector2(340, 120), "color": Color(0.76, 0.62, 0.25, 1.0), "label": "农场", "size": Vector2(110, 88), "resource": &"food", "rate": 0.45, "capacity": 12},
+	{"name": "LumberCamp", "position": Vector2(-330, -135), "color": Color(0.12, 0.39, 0.16, 1.0), "label": "伐木场", "size": Vector2(104, 82), "resource": &"wood", "rate": 0.35, "capacity": 10},
+	{"name": "Quarry", "position": Vector2(330, -135), "color": Color(0.45, 0.45, 0.45, 1.0), "label": "采石场", "size": Vector2(104, 82), "resource": &"stone", "rate": 0.25, "capacity": 8},
+	{"name": "Warehouse", "position": Vector2(0, 210), "color": Color(0.50, 0.33, 0.20, 1.0), "label": "仓库", "size": Vector2(110, 82)},
 ]
 
 const VILLAGER_ROUTE_DEFINITIONS: Array[Dictionary] = [
@@ -46,7 +46,7 @@ func _ready() -> void:
 
 func _bind_resource_inventory() -> void:
 	if not has_node("/root/ResourceInventory"):
-		push_warning("ResourceInventory autoload is not available.")
+		push_warning("ResourceInventory 自动加载未启用。")
 		return
 
 	_resource_inventory = get_node("/root/ResourceInventory")
@@ -57,12 +57,12 @@ func _bind_resource_inventory() -> void:
 
 func _bind_game_clock() -> void:
 	if not has_node("/root/GameClock"):
-		push_warning("GameClock autoload is not available.")
+		push_warning("GameClock 自动加载未启用。")
 		return
 
 	_game_clock = get_node("/root/GameClock")
 	if not _game_clock.has_signal("time_changed"):
-		push_warning("GameClock exists but time_changed signal is missing.")
+		push_warning("GameClock 存在，但缺少 time_changed 信号。")
 		return
 
 	_game_clock.connect("time_changed", Callable(self, "_on_time_changed"))
@@ -117,7 +117,7 @@ func _get_building_position(building_name: String) -> Vector2:
 	if _building_positions.has(building_name):
 		return _building_positions[building_name]
 
-	push_warning("Missing building position for %s." % building_name)
+	push_warning("缺少建筑位置：%s。" % building_name)
 	return Vector2.ZERO
 
 
@@ -162,13 +162,13 @@ func _on_inventory_changed(resources: Dictionary) -> void:
 func _on_building_selected(building_info: Dictionary, building: Node) -> void:
 	_set_selected_building(building)
 	if bool(building_info.get("is_production", false)):
-		hud.call("show_message", "%s selected. Click again after production to collect." % str(building_info.get("name", "Building")))
+		hud.call("show_message", "%s 已选中。产出后再次点击即可领取。" % str(building_info.get("name", "建筑")))
 	else:
-		hud.call("show_message", "%s selected." % str(building_info.get("name", "Building")))
+		hud.call("show_message", "%s 已选中。" % str(building_info.get("name", "建筑")))
 
 
 func _on_resource_collected(building_name: String, resource_type: StringName, amount: int) -> void:
-	hud.call("show_message", "Collected %d %s from %s." % [amount, _get_resource_label(resource_type), building_name])
+	hud.call("show_message", "已从%s领取 %d%s。" % [building_name, amount, _get_resource_label(resource_type)])
 
 
 func _on_building_storage_changed(_building_name: String, _stored_amount: int, _capacity: int, building: Node) -> void:
@@ -183,10 +183,10 @@ func _on_villager_state_changed(villager: Node2D, state_name: StringName) -> voi
 func _get_resource_label(resource_type: StringName) -> String:
 	match resource_type:
 		&"food":
-			return "Food"
+			return "食物"
 		&"wood":
-			return "Wood"
+			return "木材"
 		&"stone":
-			return "Stone"
+			return "石料"
 		_:
-			return "Resource"
+			return "资源"

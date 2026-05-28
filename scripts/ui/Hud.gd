@@ -15,7 +15,7 @@ func _process(delta: float) -> void:
 
 	_message_timer -= delta
 	if _message_timer <= 0.0:
-		message_label.text = "Territory running. Click buildings to collect."
+		message_label.text = "领地运行中。点击建筑领取资源。"
 
 
 func set_time_text(time_text: String) -> void:
@@ -27,20 +27,20 @@ func set_resources(resources: Dictionary) -> void:
 	var wood := _get_resource_amount(resources, &"wood")
 	var stone := _get_resource_amount(resources, &"stone")
 	var gold := _get_resource_amount(resources, &"gold")
-	resource_label.text = "Food %d   Wood %d   Stone %d   Gold %d" % [food, wood, stone, gold]
+	resource_label.text = "食物 %d   木材 %d   石料 %d   金币 %d" % [food, wood, stone, gold]
 
 
 func set_villager_counts(counts: Dictionary) -> void:
 	var idle := int(counts.get(&"idle", 0))
 	var moving := int(counts.get(&"moving", 0))
 	var working := int(counts.get(&"working", 0))
-	villager_label.text = "Villagers Idle %d   Moving %d   Working %d" % [idle, moving, working]
+	villager_label.text = "村民 空闲 %d   移动 %d   工作 %d" % [idle, moving, working]
 
 
 func set_selected_building(building_info: Dictionary) -> void:
-	var building_name := str(building_info.get("name", "None"))
-	var status := str(building_info.get("status", "Unknown"))
-	var resource_label_text := str(building_info.get("resource_label", "None"))
+	var building_name := str(building_info.get("name", "无"))
+	var status := str(building_info.get("status", "未知"))
+	var resource_label_text := str(building_info.get("resource_label", "无"))
 	var stored := int(building_info.get("stored_amount", 0))
 	var capacity := int(building_info.get("capacity", 0))
 	var rate := float(building_info.get("rate_per_minute", 0.0))
@@ -48,7 +48,7 @@ func set_selected_building(building_info: Dictionary) -> void:
 	if bool(building_info.get("is_production", false)):
 		building_label.text = "%s\n%s %d/%d   +%.2f/min\n%s" % [building_name, resource_label_text, stored, capacity, rate, status]
 	else:
-		building_label.text = "%s\nSupport building\n%s" % [building_name, status]
+		building_label.text = "%s\n辅助建筑\n%s" % [building_name, status]
 
 
 func show_message(message: String, duration: float = 2.4) -> void:

@@ -4,8 +4,6 @@ signal building_selected(building_info: Dictionary)
 signal resource_collected(building_name: String, resource_type: StringName, amount: int)
 signal storage_changed(building_name: String, stored_amount: int, capacity: int)
 
-const SECONDS_PER_GAME_MINUTE := 10.0
-
 @export var display_name: String = "Building"
 @export var fill_color: Color = Color(0.55, 0.43, 0.28, 1.0)
 @export var label_offset_y: float = 34.0
@@ -15,8 +13,7 @@ const SECONDS_PER_GAME_MINUTE := 10.0
 @export var production_per_minute: float = 0.0
 @export var storage_capacity: int = 10
 
-@onready var selection_outline: Polygon2D = $SelectionOutline
-@onready var visual: CanvasItem = $Visual
+@onready var visual: CanvasItem = _resolve_visual()
 @onready var label: Label = $Label
 @onready var interaction_shape: CollisionShape2D = $InteractionShape
 @onready var storage_label: Label = $StorageLabel
@@ -87,13 +84,19 @@ func configure_production(next_resource_type: StringName, next_rate: float, next
 func _get_scaled_game_minutes(delta: float) -> float:
 	if has_node("/root/GameClock"):
 		var game_clock := get_node("/root/GameClock")
-		if game_clock.has_method("get_scaled_delta"):
-			return float(game_clock.call("get_scaled_delta", delta)) / SECONDS_PER_GAME_MINUTE
-	return delta / SECONDS_PER_GAME_MINUTE
+		if game_clock.has_method("get_scaled_delta") and game_clock.has_method("get_minutes_per_second"):
+			return float(game_clock.call("get_scaled_delta", delta)) * float(game_clock.call("get_minutes_per_second"))
+	return delta
 
 
-func set_selected(value: bool) -> void:
-	selection_outline.visible = value
+func _resolve_visual() -> CanvasItem:
+	var grouped_visual := get_node_or_null("VisualGroup/Visual")
+	if grouped_visual is CanvasItem:
+		return grouped_visual as CanvasItem
+	var direct_visual := get_node_or_null("Visual")
+	if direct_visual is CanvasItem:
+		return direct_visual as CanvasItem
+	return null
 
 
 func get_building_info() -> Dictionary:
@@ -116,7 +119,7 @@ func _collect_stored_resource() -> void:
 	if stored_amount <= 0:
 		return
 	if _resource_inventory == null:
-		push_warning("ResourceInventory autoload is not available.")
+		push_warning("ResourceInventory 自动加载未启用。")
 		return
 
 	var collected_amount := stored_amount
@@ -152,21 +155,21 @@ func _update_feedback() -> void:
 
 func _get_status_text() -> String:
 	if not is_production_building:
-		return "Support building"
+		return "辅助建筑"
 	if stored_amount >= storage_capacity:
-		return "Storage full"
+		return "库存已满"
 	if stored_amount > 0:
-		return "Ready to collect"
-	return "Producing"
+		return "可领取"
+	return "生产中"
 
 
 func _get_resource_label(next_resource_type: StringName) -> String:
 	match next_resource_type:
 		&"food":
-			return "Food"
+			return "食物"
 		&"wood":
-			return "Wood"
+			return "木材"
 		&"stone":
-			return "Stone"
+			return "石料"
 		_:
-			return "None"
+			return "无"

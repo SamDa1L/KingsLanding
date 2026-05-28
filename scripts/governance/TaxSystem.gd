@@ -52,7 +52,7 @@ func get_policy_label(tax_policy: int) -> String:
 func get_policy_summary(tax_policy: int, population: int) -> String:
 	var daily_income := get_daily_gold_per_person(tax_policy) * float(max(population, 0))
 	var happiness_delta := get_daily_happiness_delta(tax_policy)
-	return "%s Tax | Gold %.1f/day | Happiness %+0.1f/day" % [get_policy_label(tax_policy), daily_income, happiness_delta]
+	return "%s | 金币 %.1f/天 | 幸福度 %+0.1f/天" % [get_policy_label(tax_policy), daily_income, happiness_delta]
 
 
 func apply_daily_happiness(governance_state: RefCounted) -> float:

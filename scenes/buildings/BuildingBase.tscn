@@ -1,6 +1,7 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://scripts/buildings/BuildingBase.gd" id="1_script"]
+[ext_resource type="Script" path="res://scripts/buildings/HoverArea.gd" id="2_hover_area"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_interaction"]
 size = Vector2(96, 80)
@@ -10,11 +11,6 @@ collision_layer = 2
 collision_mask = 0
 input_pickable = true
 script = ExtResource("1_script")
-
-[node name="SelectionOutline" type="Polygon2D" parent="."]
-visible = false
-color = Color(1, 0.89, 0.22, 0.45)
-polygon = PackedVector2Array(-58, 38, 58, 38, 58, -34, 0, -66, -58, -34)
 
 [node name="Visual" type="Polygon2D" parent="."]
 color = Color(0.55, 0.43, 0.28, 1)
@@ -45,3 +41,18 @@ horizontal_alignment = 1
 
 [node name="InteractionShape" type="CollisionShape2D" parent="."]
 shape = SubResource("RectangleShape2D_interaction")
+
+[node name="HoverArea" type="Area2D" parent="."]
+collision_layer = 2
+collision_mask = 0
+input_pickable = true
+script = ExtResource("2_hover_area")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="HoverArea"]
+shape = SubResource("RectangleShape2D_interaction")
+
+[node name="HoverPreview" type="Line2D" parent="HoverArea"]
+z_index = 100
+width = 2.0
+default_color = Color(1, 0.88, 0.24, 0.85)
+points = PackedVector2Array(-48, -40, 48, -40, 48, 40, -48, 40, -48, -40)

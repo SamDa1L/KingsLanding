@@ -1,8 +1,18 @@
-[gd_scene format=3 uid="uid://f7pxs4sel3r8"]
+[gd_scene load_steps=4 format=3 uid="uid://f7pxs4sel3r8"]
 
 [ext_resource type="TileSet" uid="uid://dq6hk7no1sfir" path="res://assets/tilesets/MasterSimple_tileset.tres" id="1_5aua7"]
+[ext_resource type="Script" path="res://scripts/buildings/HoverArea.gd" id="2_hover_area"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_hover"]
+size = Vector2(48, 48)
 
 [node name="Node2D" type="Node2D" unique_id=433925724]
+
+[node name="PlacementAnchor" type="Marker2D" parent="."]
+position = Vector2(16, 16)
+
+[node name="VillagerPoint" type="Marker2D" parent="."]
+position = Vector2(16, 34)
 
 [node name="TileMapLayer" type="TileMapLayer" parent="." unique_id=256624314]
 tile_map_data = PackedByteArray(0, 0, 0, 0, 0, 0, 0, 0, 11, 0, 1, 0, 0, 0)
@@ -15,3 +25,20 @@ tile_set = ExtResource("1_5aua7")
 [node name="TileMapLayer" type="TileMapLayer" parent="TileMapLayer/TileMapLayer" unique_id=303051718]
 tile_map_data = PackedByteArray(0, 0, 0, 0, 0, 0, 0, 0, 11, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 10, 0, 6, 0, 0, 0, 0, 0, 1, 0, 0, 0, 10, 0, 6, 0, 0, 0, 1, 0, 1, 0, 0, 0, 7, 0, 0, 0, 0, 0)
 tile_set = ExtResource("1_5aua7")
+
+[node name="HoverArea" type="Area2D" parent="."]
+position = Vector2(16, 16)
+collision_layer = 2
+collision_mask = 0
+input_pickable = true
+script = ExtResource("2_hover_area")
+hover_size = Vector2(48, 48)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="HoverArea"]
+shape = SubResource("RectangleShape2D_hover")
+
+[node name="HoverPreview" type="Line2D" parent="HoverArea"]
+z_index = 100
+width = 2.0
+default_color = Color(1, 0.88, 0.24, 0.85)
+points = PackedVector2Array(-24, -24, 24, -24, 24, 24, -24, 24, -24, -24)

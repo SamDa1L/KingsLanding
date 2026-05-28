@@ -2,9 +2,13 @@
 
 [ext_resource type="Script" uid="uid://bj1lmomaw0rvc" path="res://scripts/buildings/BuildingBase.gd" id="1_gfsvf"]
 [ext_resource type="Texture2D" uid="uid://du0upguyajhrw" path="res://assets/art/buildings/castle/CastleLevel_1.png" id="2_hmpcj"]
+[ext_resource type="Script" uid="uid://brpf82v6qp08d" path="res://scripts/buildings/HoverArea.gd" id="3_hover_area"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_interaction"]
 size = Vector2(40, 39)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_hover"]
+size = Vector2(46, 42)
 
 [node name="Castle" type="Area2D" unique_id=135548049]
 collision_layer = 2
@@ -16,23 +20,22 @@ label_offset_y = 96.0
 interaction_size = Vector2(210, 230)
 storage_capacity = 0
 
-[node name="SelectionOutline" type="Polygon2D" parent="." unique_id=199512752]
-visible = false
-z_index = 5
-color = Color(1, 0.89, 0.22, 0.45)
-polygon = PackedVector2Array(-110, 80, 110, 80, 110, -86, 72, -122, 0, -142, -72, -122, -110, -86)
-
 [node name="Visual" type="Sprite2D" parent="." unique_id=620975540]
 scale = Vector2(0.05, 0.05)
 texture = ExtResource("2_hmpcj")
+
+[node name="PlacementAnchor" type="Marker2D" parent="."]
+
+[node name="VillagerPoint" type="Marker2D" parent="."]
+position = Vector2(0, 46)
 
 [node name="ReadyIndicator" type="Polygon2D" parent="." unique_id=1174017179]
 visible = false
 z_index = 8
 position = Vector2(84, -120)
 color = Color(1, 0.82, 0.16, 1)
-polygon = PackedVector2Array(6, 14)
-uv = PackedVector2Array(6, 14)
+polygon = PackedVector2Array(-104, 144, -63, 144, -63, 105, -105, 104)
+uv = PackedVector2Array(-104, 144, -63, 144, -63, 105, -118.252075, 103.89778)
 
 [node name="Label" type="Label" parent="." unique_id=1914760537]
 z_index = 10
@@ -56,3 +59,19 @@ horizontal_alignment = 1
 [node name="InteractionShape" type="CollisionShape2D" parent="." unique_id=1747790105]
 position = Vector2(0, 4.5)
 shape = SubResource("RectangleShape2D_interaction")
+
+[node name="HoverArea" type="Area2D" parent="." unique_id=1239516356]
+position = Vector2(0, 4)
+collision_layer = 2
+collision_mask = 0
+script = ExtResource("3_hover_area")
+hover_size = Vector2(46, 42)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="HoverArea" unique_id=1842056776]
+shape = SubResource("RectangleShape2D_hover")
+
+[node name="HoverPreview" type="Line2D" parent="HoverArea" unique_id=476166404]
+z_index = 100
+points = PackedVector2Array(-23, -21, 23, -21, 23, 21, -23, 21, -23, -21)
+width = 2.0
+default_color = Color(1, 0.88, 0.24, 0.85)

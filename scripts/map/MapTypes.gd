@@ -65,51 +65,51 @@ static func get_cardinal_directions() -> Array[Vector2i]:
 static func get_terrain_label(terrain_type: int) -> String:
 	match terrain_type:
 		TerrainType.TOWN_CENTER:
-			return "Town Center"
+			return "城堡"
 		TerrainType.FOREST:
-			return "Forest"
+			return "森林"
 		TerrainType.STONE:
-			return "Stone"
+			return "石料"
 		TerrainType.PLAIN:
-			return "Plain"
+			return "平原"
 		TerrainType.ROAD:
-			return "Road"
+			return "道路"
 		TerrainType.EMPTY:
-			return "Empty"
+			return "空地"
 		TerrainType.WATER:
-			return "Water"
+			return "水域"
 		TerrainType.MOUNTAIN:
-			return "Mountain"
+			return "山地"
 		_:
-			return "Unknown"
+			return "未知"
 
 
 static func get_building_label(building_type: int) -> String:
 	match building_type:
 		BuildingType.TOWN_CENTER:
-			return "Castle"
+			return "城堡"
 		BuildingType.LUMBER_CAMP:
-			return "Lumber Camp"
+			return "伐木场"
 		BuildingType.QUARRY:
-			return "Quarry"
+			return "采石场"
 		BuildingType.FARM:
-			return "Farm"
+			return "农场"
 		BuildingType.HOUSE:
-			return "House"
+			return "住宅"
 		_:
-			return "Unknown"
+			return "未知"
 
 
 static func get_tax_policy_label(tax_policy: int) -> String:
 	match tax_policy:
 		TaxPolicy.LOW:
-			return "Low"
+			return "低税"
 		TaxPolicy.NORMAL:
-			return "Normal"
+			return "正常税"
 		TaxPolicy.HIGH:
-			return "High"
+			return "重税"
 		_:
-			return "Unknown"
+			return "未知"
 
 
 static func get_resource_name_for_terrain(terrain_type: int) -> StringName:
@@ -125,9 +125,9 @@ static func get_resource_name_for_terrain(terrain_type: int) -> StringName:
 static func get_resource_label_for_terrain(terrain_type: int) -> String:
 	match terrain_type:
 		TerrainType.FOREST:
-			return "Wood"
+			return "木材"
 		TerrainType.STONE:
-			return "Stone"
+			return "石料"
 		_:
 			return ""
 
@@ -142,6 +142,36 @@ static func get_resource_name_for_building(building_type: int) -> StringName:
 			return RESOURCE_FOOD
 		_:
 			return &""
+
+
+static func get_building_cost(building_type: int) -> Dictionary:
+	match building_type:
+		BuildingType.LUMBER_CAMP:
+			return {
+				RESOURCE_WOOD: 8.0,
+				RESOURCE_STONE: 4.0,
+				RESOURCE_GOLD: 4.0,
+			}
+		BuildingType.QUARRY:
+			return {
+				RESOURCE_WOOD: 4.0,
+				RESOURCE_STONE: 8.0,
+				RESOURCE_GOLD: 4.0,
+			}
+		BuildingType.FARM:
+			return {
+				RESOURCE_WOOD: 6.0,
+				RESOURCE_STONE: 2.0,
+				RESOURCE_GOLD: 4.0,
+			}
+		BuildingType.HOUSE:
+			return {
+				RESOURCE_WOOD: 12.0,
+				RESOURCE_STONE: 6.0,
+				RESOURCE_GOLD: 6.0,
+			}
+		_:
+			return {}
 
 
 static func get_default_building_type_for_terrain(terrain_type: int) -> int:

@@ -11,7 +11,7 @@ const SPEED_STEPS: Array[float] = [1.0, 2.0, 3.0]
 
 @export var start_hour: int = 8
 @export var start_minute: int = 0
-@export var minutes_per_second: float = 0.1
+@export var minutes_per_second: float = 1.0
 
 var time_scale: float = 1.0
 var _speed_index: int = 0
@@ -81,6 +81,10 @@ func get_time_scale() -> float:
 
 func get_selected_time_scale() -> float:
 	return _selected_time_scale
+
+
+func get_minutes_per_second() -> float:
+	return minutes_per_second
 
 
 func get_scaled_delta(delta: float) -> float:

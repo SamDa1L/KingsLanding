@@ -4,7 +4,9 @@ extends RefCounted
 const MapTypes := preload("res://scripts/map/MapTypes.gd")
 const TaxSystemScript := preload("res://scripts/governance/TaxSystem.gd")
 
-const FARM_FOOD_PER_MINUTE := 1.0
+const FARM_FOOD_PER_WORKER_PER_MINUTE := 0.8
+const WOOD_PER_PRESENT_WORKER_PER_MINUTE := 1.0
+const STONE_PER_PRESENT_WORKER_PER_MINUTE := 0.7
 const WOOD_PER_FOREST_CELL_PER_MINUTE := 0.5
 const STONE_PER_STONE_CELL_PER_MINUTE := 0.35
 const MIN_WOOD_PER_MINUTE := 1.0
@@ -30,6 +32,11 @@ func get_region_output_per_minute(region: RefCounted, building_type: int) -> flo
 
 
 func get_building_output_per_minute(building: RefCounted, regions_by_id: Dictionary) -> Dictionary:
+	var present_worker_count := _get_worker_count(building)
+	return get_building_output_per_minute_with_present_workers(building, regions_by_id, present_worker_count)
+
+
+func get_building_output_per_minute_with_present_workers(building: RefCounted, regions_by_id: Dictionary, present_worker_count: int) -> Dictionary:
 	var output: Dictionary = {}
 	if building == null or not building.is_active or not building.is_production_building():
 		return output
@@ -38,14 +45,19 @@ func get_building_output_per_minute(building: RefCounted, regions_by_id: Diction
 	if resource_type == &"":
 		return output
 
+	if present_worker_count <= 0:
+		return output
+
 	var amount := 0.0
 	if building.building_type == MapTypes.BuildingType.FARM:
-		amount = FARM_FOOD_PER_MINUTE
+		amount = float(present_worker_count) * FARM_FOOD_PER_WORKER_PER_MINUTE
 	else:
 		var region := _get_region_for_building(building, regions_by_id)
 		if region == null:
 			return output
-		amount = get_region_output_per_minute(region, building.building_type)
+		var region_output := get_region_output_per_minute(region, building.building_type)
+		var worker_output := _get_worker_limited_output_per_minute(building.building_type, present_worker_count)
+		amount = min(region_output, worker_output)
 
 	if amount > 0.0:
 		output[resource_type] = amount
@@ -123,3 +135,37 @@ func _get_required_region_terrain(building_type: int) -> int:
 			return MapTypes.TerrainType.STONE
 		_:
 			return -1
+
+
+func _get_worker_multiplier(building: RefCounted) -> float:
+	if building == null:
+		return 0.0
+	if building.has_method("get_worker_count") and building.has_method("get_worker_capacity"):
+		if int(building.call("get_worker_capacity")) <= 0:
+			return 0.0
+		return float(max(int(building.call("get_worker_count")), 0))
+	return 1.0
+
+
+func _get_worker_count(building: RefCounted) -> int:
+	if building == null:
+		return 0
+	if building.has_method("get_worker_count") and building.has_method("get_worker_capacity"):
+		if int(building.call("get_worker_capacity")) <= 0:
+			return 0
+		return max(int(building.call("get_worker_count")), 0)
+	return 1
+
+
+func _get_worker_limited_output_per_minute(building_type: int, present_worker_count: int) -> float:
+	if present_worker_count <= 0:
+		return 0.0
+	match building_type:
+		MapTypes.BuildingType.LUMBER_CAMP:
+			return float(present_worker_count) * WOOD_PER_PRESENT_WORKER_PER_MINUTE
+		MapTypes.BuildingType.QUARRY:
+			return float(present_worker_count) * STONE_PER_PRESENT_WORKER_PER_MINUTE
+		MapTypes.BuildingType.FARM:
+			return float(present_worker_count) * FARM_FOOD_PER_WORKER_PER_MINUTE
+		_:
+			return 0.0

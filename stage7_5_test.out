@@ -1,0 +1,63 @@
+Godot Engine v4.6.1.stable.official.14d19694e - https://godotengine.org
+
+stage3 demo map read ok | size=72x40 offset=(-36, -20) ground_cells=2880 resource_cells=125 decor_cells_ignored=772
+stage3 terrain counts | town_center=0 forest=80 stone=45 plain=2563 empty=24 road=0 water=168 mountain=0
+stage3 resource regions | forest=2 forest_area=80 stone=2 stone_area=45
+stage3 forest region | id=0 terrain=Forest area=50 adjacent_buildable_cells=30 farmable_cells=0
+stage3 forest region | id=1 terrain=Forest area=30 adjacent_buildable_cells=22 farmable_cells=0
+stage3 stone region | id=0 terrain=Stone area=15 adjacent_buildable_cells=15 farmable_cells=0
+stage3 stone region | id=1 terrain=Stone area=30 adjacent_buildable_cells=22 farmable_cells=0
+stage3 plain area | id=0 terrain=Plain area=2563 adjacent_buildable_cells=24 farmable_cells=2563
+stage3 farmable terrain | plain_cells=2563 plain_areas=1 farmable_cells=2563
+stage6 villager state | name=VillagerLumberCamp0 state=idle
+stage6 villager route | name=VillagerLumberCamp0 work=Lumber Camp home=(8.0, 54.0) work_pos=(-328.0, -11.0)
+stage6 villager state | name=VillagerQuarry1 state=idle
+stage6 villager route | name=VillagerQuarry1 work=Quarry home=(8.0, 54.0) work_pos=(264.0, -118.0)
+stage6 villager state | name=VillagerFarm2 state=idle
+stage6 villager route | name=VillagerFarm2 work=Farm home=(8.0, 54.0) work_pos=(-112.0, 308.0)
+stage4 initial buildings | total=4 castle=1 lumber_camp=1 quarry=1 farm=1 seed=20260523
+stage4 building | type=Castle cell=(36, 20) linked_region_id=-1 resource=
+stage4 building | type=Lumber Camp cell=(15, 18) linked_region_id=1 resource=wood
+stage4 building | type=Quarry cell=(52, 11) linked_region_id=0 resource=stone
+stage4 building | type=Farm cell=(28, 38) linked_region_id=0 resource=food
+stage6 villager routes | total=3 idle=3 moving=0 working=0
+stage6 villager state | name=VillagerLumberCamp0 state=moving
+stage6 villager state | name=VillagerQuarry0 state=idle
+stage6 villager route | name=VillagerQuarry0 work=Quarry home=(8.0, 54.0) work_pos=(264.0, -118.0)
+stage6 villager state | name=VillagerFarm1 state=idle
+stage6 villager route | name=VillagerFarm1 work=Farm home=(8.0, 54.0) work_pos=(-112.0, 308.0)
+stage6 villager state | name=VillagerIdle0 state=idle
+stage6 villager state | name=@Node2D@2 state=idle
+stage6 villager route | name=@Node2D@2 work=Quarry home=(8.0, 54.0) work_pos=(264.0, -118.0)
+stage6 villager state | name=@Node2D@3 state=idle
+stage6 villager route | name=@Node2D@3 work=Quarry home=(8.0, 54.0) work_pos=(264.0, -118.0)
+stage6 villager state | name=@Node2D@4 state=idle
+stage6 villager route | name=@Node2D@4 work=Farm home=(8.0, 54.0) work_pos=(-112.0, 308.0)
+stage7 placement success | building=House cell=(0, 0)
+stage6 villager state | name=@Node2D@5 state=idle
+stage6 villager route | name=@Node2D@5 work=Quarry home=(-560.0, -296.0) work_pos=(264.0, -118.0)
+stage6 villager state | name=@Node2D@6 state=idle
+stage6 villager route | name=@Node2D@6 work=Quarry home=(-560.0, -296.0) work_pos=(264.0, -118.0)
+stage6 villager state | name=@Node2D@7 state=idle
+stage6 villager route | name=@Node2D@7 work=Farm home=(-560.0, -296.0) work_pos=(-112.0, 308.0)
+stage6 villager state | name=@Node2D@8 state=idle
+stage6 villager state | name=VillagerIdle1 state=idle
+stage6 villager state | name=VillagerIdle2 state=idle
+stage6 villager state | name=VillagerIdle3 state=idle
+stage6 villager state | name=VillagerIdle4 state=idle
+stage6 villager state | name=@Node2D@9 state=idle
+stage6 villager route | name=@Node2D@9 work=Quarry home=(-560.0, -296.0) work_pos=(264.0, -118.0)
+stage6 villager state | name=@Node2D@10 state=idle
+stage6 villager route | name=@Node2D@10 work=Quarry home=(-560.0, -296.0) work_pos=(264.0, -118.0)
+stage6 villager state | name=@Node2D@11 state=idle
+stage6 villager route | name=@Node2D@11 work=Farm home=(-560.0, -296.0) work_pos=(-112.0, 308.0)
+stage6 villager state | name=@Node2D@12 state=idle
+stage6 villager state | name=@Node2D@13 state=idle
+stage6 villager state | name=@Node2D@14 state=idle
+stage6 villager state | name=@Node2D@15 state=idle
+stage6 villager state | name=@Node2D@16 state=idle
+stage6 villager state | name=VillagerQuarry0 state=moving
+stage6 villager state | name=@Node2D@2 state=moving
+stage6 villager state | name=@Node2D@5 state=moving
+stage6 villager state | name=@Node2D@9 state=moving
+stage7.5 validation ok | population=8 workers=3
