@@ -1,0 +1,464 @@
+[gd_resource type="Resource" script_class="GroundRuleTable" format=3 uid="uid://b53s1q66txv44"]
+
+[ext_resource type="Script" uid="uid://4t2l5k3y0vhh" path="res://scripts/mapgen/GroundRuleTable.gd" id="1_ground_rule_table"]
+[ext_resource type="Script" uid="uid://c8hakry0avjrx" path="res://scripts/mapgen/GroundRule.gd" id="1_hougo"]
+[ext_resource type="TileSet" uid="uid://dq6hk7no1sfir" path="res://assets/tilesets/MasterSimple_tileset.tres" id="2_i5clt"]
+
+[sub_resource type="Resource" id="Resource_3gc3n"]
+script = ExtResource("1_hougo")
+rule_name = "Grassplain_TL"
+ground_zone = "top"
+ground_role = "T"
+top_tag = "outer"
+right_tag = "plain_edge_top"
+bottom_tag = "plain_edge_left"
+left_tag = "outer"
+tile_set = ExtResource("2_i5clt")
+tile_source_id = 0
+tile_atlas_coords = Vector2i(0, 0)
+metadata/_custom_type_script = "uid://c8hakry0avjrx"
+
+[sub_resource type="Resource" id="Resource_ek0h6"]
+script = ExtResource("1_hougo")
+rule_name = "Grassplain_T"
+ground_zone = "top"
+ground_role = "T"
+top_tag = "outer"
+right_tag = "plain_edge_top"
+left_tag = "plain_edge_top"
+tile_set = ExtResource("2_i5clt")
+tile_source_id = 0
+tile_atlas_coords = Vector2i(1, 0)
+metadata/_custom_type_script = "uid://c8hakry0avjrx"
+
+[sub_resource type="Resource" id="Resource_hougo"]
+script = ExtResource("1_hougo")
+rule_name = "Grassplain_TR"
+ground_zone = "top"
+ground_role = "TR"
+top_tag = "outer"
+right_tag = "outer"
+bottom_tag = "plain_edge_right"
+left_tag = "plain_edge_top"
+tile_set = ExtResource("2_i5clt")
+tile_source_id = 0
+tile_atlas_coords = Vector2i(2, 0)
+metadata/_custom_type_script = "uid://c8hakry0avjrx"
+
+[sub_resource type="Resource" id="Resource_i5clt"]
+script = ExtResource("1_hougo")
+rule_name = "Grassplain_L1"
+ground_zone = "left"
+ground_role = "L"
+top_tag = "plain_edge_left"
+bottom_tag = "plain_edge_left"
+left_tag = "outer"
+tile_atlas_coords = Vector2i(0, 1)
+metadata/_custom_type_script = "uid://c8hakry0avjrx"
+
+[sub_resource type="Resource" id="Resource_j3u52"]
+script = ExtResource("1_hougo")
+rule_name = "Grassplain_L2"
+ground_zone = "left"
+ground_role = "L"
+top_tag = "plain_edge_left"
+bottom_tag = "plain_edge_left"
+left_tag = "outer"
+variant_index = 2
+tile_set = ExtResource("2_i5clt")
+tile_source_id = 0
+tile_atlas_coords = Vector2i(0, 2)
+metadata/_custom_type_script = "uid://c8hakry0avjrx"
+
+[sub_resource type="Resource" id="Resource_yukyn"]
+script = ExtResource("1_hougo")
+rule_name = "Grassplain_BL"
+ground_zone = "bottom"
+ground_role = "BL"
+top_tag = "plain_edge_left"
+right_tag = "plain_edge_bottom"
+bottom_tag = "outer"
+left_tag = "outer"
+buildable = false
+passable = false
+tile_set = ExtResource("2_i5clt")
+tile_source_id = 0
+tile_atlas_coords = Vector2i(0, 3)
+metadata/_custom_type_script = "uid://c8hakry0avjrx"
+
+[sub_resource type="Resource" id="Resource_as8jp"]
+script = ExtResource("1_hougo")
+rule_name = "Grassplain_B"
+ground_zone = "bottom"
+ground_role = "BM"
+right_tag = "plain_edge_bottom"
+bottom_tag = "outer"
+left_tag = "plain_edge_bottom"
+buildable = false
+passable = false
+tile_set = ExtResource("2_i5clt")
+tile_source_id = 0
+tile_atlas_coords = Vector2i(1, 3)
+metadata/_custom_type_script = "uid://c8hakry0avjrx"
+
+[sub_resource type="Resource" id="Resource_gt06e"]
+script = ExtResource("1_hougo")
+rule_name = "Grassplain_R1"
+ground_zone = "right"
+ground_role = "R"
+top_tag = "plain_edge_right"
+right_tag = "outer"
+bottom_tag = "plain_edge_right"
+tile_set = ExtResource("2_i5clt")
+tile_source_id = 0
+tile_atlas_coords = Vector2i(2, 1)
+metadata/_custom_type_script = "uid://c8hakry0avjrx"
+
+[sub_resource type="Resource" id="Resource_x5l7w"]
+script = ExtResource("1_hougo")
+rule_name = "Grassplain_R2"
+ground_zone = "right"
+ground_role = "R"
+top_tag = "plain_edge_right"
+right_tag = "outer"
+bottom_tag = "plain_edge_right"
+variant_index = 2
+tile_set = ExtResource("2_i5clt")
+tile_source_id = 0
+tile_atlas_coords = Vector2i(2, 2)
+metadata/_custom_type_script = "uid://c8hakry0avjrx"
+
+[sub_resource type="Resource" id="Resource_gkjdj"]
+script = ExtResource("1_hougo")
+rule_name = "Grassplain_BR"
+ground_zone = "bottom"
+ground_role = "BR"
+top_tag = "plain_edge_right"
+right_tag = "outer"
+bottom_tag = "outer"
+left_tag = "plain_edge_bottom"
+buildable = false
+passable = false
+tile_set = ExtResource("2_i5clt")
+tile_source_id = 0
+tile_atlas_coords = Vector2i(2, 3)
+metadata/_custom_type_script = "uid://c8hakry0avjrx"
+
+[sub_resource type="Resource" id="Resource_2p20q"]
+script = ExtResource("1_hougo")
+rule_name = "Grassplain_M1"
+tile_set = ExtResource("2_i5clt")
+tile_source_id = 0
+tile_atlas_coords = Vector2i(1, 1)
+metadata/_custom_type_script = "uid://c8hakry0avjrx"
+
+[sub_resource type="Resource" id="Resource_ekt5t"]
+script = ExtResource("1_hougo")
+rule_name = "Grassplain_M1"
+variant_index = 2
+tile_set = ExtResource("2_i5clt")
+tile_source_id = 0
+tile_atlas_coords = Vector2i(1, 2)
+metadata/_custom_type_script = "uid://c8hakry0avjrx"
+
+[sub_resource type="Resource" id="Resource_lgy46"]
+script = ExtResource("1_hougo")
+rule_name = "Grassplain_BL_W1"
+ground_zone = "bottom"
+ground_role = "BL"
+top_tag = "plain_edge_left"
+right_tag = "plain_edge_bottom_water"
+bottom_tag = "water"
+left_tag = "plain_edge_right"
+buildable = false
+passable = false
+tile_set = ExtResource("2_i5clt")
+tile_source_id = 0
+tile_atlas_coords = Vector2i(0, 4)
+metadata/_custom_type_script = "uid://c8hakry0avjrx"
+
+[sub_resource type="Resource" id="Resource_cwwg3"]
+script = ExtResource("1_hougo")
+rule_name = "Grassplain_B_W1"
+ground_zone = "bottom"
+ground_role = "BM"
+right_tag = "plain_edge_bottom_water"
+bottom_tag = "water"
+left_tag = "plain_edge_bottom_water"
+buildable = false
+passable = false
+tile_set = ExtResource("2_i5clt")
+tile_source_id = 0
+tile_atlas_coords = Vector2i(1, 4)
+metadata/_custom_type_script = "uid://c8hakry0avjrx"
+
+[sub_resource type="Resource" id="Resource_rllbh"]
+script = ExtResource("1_hougo")
+rule_name = "Grassplain_B_W2"
+ground_zone = "bottom"
+ground_role = "BM"
+right_tag = "plain_edge_bottom_water"
+bottom_tag = "water"
+left_tag = "plain_edge_bottom_water"
+variant_index = 2
+buildable = false
+passable = false
+tile_set = ExtResource("2_i5clt")
+tile_source_id = 0
+tile_atlas_coords = Vector2i(3, 3)
+metadata/_custom_type_script = "uid://c8hakry0avjrx"
+
+[sub_resource type="Resource" id="Resource_wkcxa"]
+script = ExtResource("1_hougo")
+rule_name = "Grassplain_B_W3"
+ground_zone = "bottom"
+ground_role = "BM"
+right_tag = "plain_edge_bottom_water"
+bottom_tag = "water"
+left_tag = "plain_edge_bottom_water"
+variant_index = 3
+buildable = false
+passable = false
+tile_set = ExtResource("2_i5clt")
+tile_source_id = 0
+tile_atlas_coords = Vector2i(4, 3)
+metadata/_custom_type_script = "uid://c8hakry0avjrx"
+
+[sub_resource type="Resource" id="Resource_tofar"]
+script = ExtResource("1_hougo")
+rule_name = "Grassplain_BR_W1"
+ground_zone = "bottom"
+ground_role = "BR"
+top_tag = "plain_edge_right"
+right_tag = "plain_edge_left"
+bottom_tag = "water"
+left_tag = "plain_edge_bottom_water"
+buildable = false
+passable = false
+tile_set = ExtResource("2_i5clt")
+tile_source_id = 0
+tile_atlas_coords = Vector2i(2, 4)
+metadata/_custom_type_script = "uid://c8hakry0avjrx"
+
+[sub_resource type="Resource" id="Resource_m6ris"]
+script = ExtResource("1_hougo")
+rule_name = "Grassplain_BL_W2"
+ground_zone = "bottom"
+ground_role = "BL"
+top_tag = "plain_edge_left"
+right_tag = "plain_edge_bottom_water"
+bottom_tag = "water"
+left_tag = "plain_edge_right"
+variant_index = 2
+buildable = false
+passable = false
+tile_set = ExtResource("2_i5clt")
+tile_source_id = 0
+tile_atlas_coords = Vector2i(3, 4)
+metadata/_custom_type_script = "uid://c8hakry0avjrx"
+
+[sub_resource type="Resource" id="Resource_t5gjl"]
+script = ExtResource("1_hougo")
+rule_name = "Grassplain_B_W4"
+ground_zone = "bottom"
+ground_role = "BM"
+right_tag = "plain_edge_bottom_water"
+bottom_tag = "water"
+left_tag = "plain_edge_bottom_water"
+variant_index = 4
+buildable = false
+passable = false
+tile_set = ExtResource("2_i5clt")
+tile_source_id = 0
+tile_atlas_coords = Vector2i(4, 4)
+metadata/_custom_type_script = "uid://c8hakry0avjrx"
+
+[sub_resource type="Resource" id="Resource_qt5nu"]
+script = ExtResource("1_hougo")
+rule_name = "Grassplain_BR_W2"
+ground_zone = "bottom"
+ground_role = "BR"
+top_tag = "plain_edge_right"
+right_tag = "plain_edge_left"
+bottom_tag = "water"
+left_tag = "plain_edge_bottom_water"
+variant_index = 2
+tile_set = ExtResource("2_i5clt")
+tile_source_id = 0
+tile_atlas_coords = Vector2i(5, 4)
+metadata/_custom_type_script = "uid://c8hakry0avjrx"
+
+[sub_resource type="Resource" id="Resource_pq5dx"]
+script = ExtResource("1_hougo")
+rule_name = "Water_L1"
+ground_type = "water"
+ground_zone = "left"
+ground_role = "L"
+top_tag = "plain_edge_bottom_water"
+right_tag = "water"
+bottom_tag = "water_edge_left"
+left_tag = "plain_edge_right"
+buildable = false
+passable = false
+tile_set = ExtResource("2_i5clt")
+tile_source_id = 0
+tile_atlas_coords = Vector2i(0, 5)
+metadata/_custom_type_script = "uid://c8hakry0avjrx"
+
+[sub_resource type="Resource" id="Resource_og4ab"]
+script = ExtResource("1_hougo")
+rule_name = "Water_BL"
+ground_type = "water"
+ground_zone = "bottom"
+ground_role = "BL"
+top_tag = "water_edge_left"
+right_tag = "water_edge_bottom"
+bottom_tag = "plain_edge_top"
+left_tag = "plain_edge_right"
+buildable = false
+passable = false
+tile_set = ExtResource("2_i5clt")
+tile_source_id = 0
+tile_atlas_coords = Vector2i(0, 6)
+metadata/_custom_type_script = "uid://c8hakry0avjrx"
+
+[sub_resource type="Resource" id="Resource_qhcpi"]
+script = ExtResource("1_hougo")
+rule_name = "Water_B1"
+ground_type = "water"
+ground_zone = "bottom"
+ground_role = "BM"
+top_tag = "water"
+right_tag = "water_edge_bottom"
+bottom_tag = "plain_edge_top"
+left_tag = "water_edge_bottom"
+buildable = false
+passable = false
+tile_set = ExtResource("2_i5clt")
+tile_source_id = 0
+tile_atlas_coords = Vector2i(1, 6)
+metadata/_custom_type_script = "uid://c8hakry0avjrx"
+
+[sub_resource type="Resource" id="Resource_6o2c8"]
+script = ExtResource("1_hougo")
+rule_name = "Water_B2"
+ground_type = "water"
+ground_zone = "bottom"
+ground_role = "BM"
+top_tag = "water"
+right_tag = "water_edge_bottom"
+bottom_tag = "plain_edge_top"
+left_tag = "water_edge_bottom"
+variant_index = 2
+buildable = false
+passable = false
+tile_set = ExtResource("2_i5clt")
+tile_source_id = 0
+tile_atlas_coords = Vector2i(2, 6)
+metadata/_custom_type_script = "uid://c8hakry0avjrx"
+
+[sub_resource type="Resource" id="Resource_72ny4"]
+script = ExtResource("1_hougo")
+rule_name = "Water_B3"
+ground_type = "water"
+ground_zone = "bottom"
+ground_role = "BM"
+top_tag = "water"
+right_tag = "water_edge_bottom"
+bottom_tag = "plain_edge_top"
+left_tag = "water_edge_bottom"
+variant_index = 3
+buildable = false
+passable = false
+tile_set = ExtResource("2_i5clt")
+tile_source_id = 0
+tile_atlas_coords = Vector2i(3, 6)
+metadata/_custom_type_script = "uid://c8hakry0avjrx"
+
+[sub_resource type="Resource" id="Resource_uhuhh"]
+script = ExtResource("1_hougo")
+rule_name = "Water_BR"
+ground_type = "water"
+ground_zone = "bottom"
+ground_role = "BR"
+top_tag = "water_edge_right"
+right_tag = "plain_edge_left"
+bottom_tag = "plain_edge_top"
+left_tag = "water_edge_bottom"
+buildable = false
+passable = false
+tile_set = ExtResource("2_i5clt")
+tile_source_id = 0
+tile_atlas_coords = Vector2i(4, 6)
+metadata/_custom_type_script = "uid://c8hakry0avjrx"
+
+[sub_resource type="Resource" id="Resource_jqau0"]
+script = ExtResource("1_hougo")
+rule_name = "Water_M"
+ground_type = "water"
+top_tag = "water"
+right_tag = "water"
+bottom_tag = "water"
+left_tag = "water"
+buildable = false
+passable = false
+tile_set = ExtResource("2_i5clt")
+tile_source_id = 0
+tile_atlas_coords = Vector2i(1, 5)
+metadata/_custom_type_script = "uid://c8hakry0avjrx"
+
+[sub_resource type="Resource" id="Resource_j8tst"]
+script = ExtResource("1_hougo")
+rule_name = "Water_R1"
+ground_type = "water"
+ground_zone = "right"
+ground_role = "R"
+top_tag = "plain_edge_bottom_water"
+right_tag = "plain_edge_left"
+bottom_tag = "water_edge_right"
+left_tag = "water"
+buildable = false
+passable = false
+tile_set = ExtResource("2_i5clt")
+tile_source_id = 0
+tile_atlas_coords = Vector2i(2, 5)
+metadata/_custom_type_script = "uid://c8hakry0avjrx"
+
+[sub_resource type="Resource" id="Resource_aoohf"]
+script = ExtResource("1_hougo")
+rule_name = "Water_B3"
+ground_type = "water"
+ground_zone = "right"
+ground_role = "R"
+top_tag = "plain_edge_bottom_water"
+right_tag = "plain_edge_left"
+bottom_tag = "water_edge_right"
+left_tag = "water"
+buildable = false
+passable = false
+tile_set = ExtResource("2_i5clt")
+tile_source_id = 0
+tile_atlas_coords = Vector2i(4, 5)
+metadata/_custom_type_script = "uid://c8hakry0avjrx"
+
+[sub_resource type="Resource" id="Resource_3af1k"]
+script = ExtResource("1_hougo")
+rule_name = "Water_L2"
+ground_type = "water"
+ground_zone = "left"
+ground_role = "L"
+top_tag = "plain_edge_bottom_water"
+right_tag = "water"
+bottom_tag = "water_edge_left"
+left_tag = "plain_edge_right"
+variant_index = 2
+buildable = false
+passable = false
+tile_set = ExtResource("2_i5clt")
+tile_source_id = 0
+tile_atlas_coords = Vector2i(3, -1)
+metadata/_custom_type_script = "uid://c8hakry0avjrx"
+
+[resource]
+script = ExtResource("1_ground_rule_table")
+rules = Array[ExtResource("1_hougo")]([SubResource("Resource_3gc3n"), SubResource("Resource_ek0h6"), SubResource("Resource_hougo"), SubResource("Resource_i5clt"), SubResource("Resource_j3u52"), SubResource("Resource_yukyn"), SubResource("Resource_as8jp"), SubResource("Resource_gt06e"), SubResource("Resource_x5l7w"), SubResource("Resource_gkjdj"), SubResource("Resource_2p20q"), SubResource("Resource_ekt5t"), SubResource("Resource_lgy46"), SubResource("Resource_cwwg3"), SubResource("Resource_rllbh"), SubResource("Resource_wkcxa"), SubResource("Resource_tofar"), SubResource("Resource_m6ris"), SubResource("Resource_t5gjl"), SubResource("Resource_qt5nu"), SubResource("Resource_pq5dx"), SubResource("Resource_og4ab"), SubResource("Resource_qhcpi"), SubResource("Resource_6o2c8"), SubResource("Resource_72ny4"), SubResource("Resource_uhuhh"), SubResource("Resource_jqau0"), SubResource("Resource_j8tst"), SubResource("Resource_aoohf"), SubResource("Resource_3af1k")])

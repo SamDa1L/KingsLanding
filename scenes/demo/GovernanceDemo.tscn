@@ -1,13 +1,12 @@
 [gd_scene format=4 uid="uid://bbn278mmc17mg"]
 
 [ext_resource type="TileSet" uid="uid://dq6hk7no1sfir" path="res://assets/tilesets/MasterSimple_tileset.tres" id="1_kf3mq"]
-[ext_resource type="Script" path="res://scripts/demo/GovernanceDemo.gd" id="2_demo"]
+[ext_resource type="Script" uid="uid://b8l8mnwb8kmlq" path="res://scripts/demo/GovernanceDemo.gd" id="2_demo"]
 
 [node name="GovernanceDemo" type="Node2D" unique_id=302378623]
 script = ExtResource("2_demo")
 
 [node name="MainCamera" type="Camera2D" parent="." unique_id=637778291]
-enabled = true
 
 [node name="MapRoot" type="Node2D" parent="." unique_id=1012694868]
 
@@ -36,116 +35,99 @@ visible = false
 color = Color(0.2, 0.95, 0.3, 0.42)
 
 [node name="HoverHintLabel" type="Label" parent="PlacementOverlay" unique_id=1501949201]
-mouse_filter = 2
 visible = false
 z_index = 101
 offset_right = 360.0
 offset_bottom = 48.0
-text = "当前建筑：无"
 theme_override_font_sizes/font_size = 16
+text = "当前建筑：无"
 
 [node name="UIRoot" type="CanvasLayer" parent="." unique_id=1929761559]
-[node name="GameViewportMask" type="ColorRect" parent="UIRoot"]
-anchor_left = 0.0
-anchor_top = 0.0
-anchor_right = 0.0
-anchor_bottom = 0.0
-offset_left = 0.0
-offset_top = 0.0
+
+[node name="GameViewportMask" type="ColorRect" parent="UIRoot" unique_id=316499125]
 offset_right = 1280.0
 offset_bottom = 720.0
-color = Color(0.0, 0.0, 0.0, 0.0)
 mouse_filter = 2
+color = Color(0, 0, 0, 0)
 
-[node name="ViewportDivider" type="ColorRect" parent="UIRoot"]
-anchor_left = 0.0
-anchor_top = 0.0
-anchor_right = 0.0
-anchor_bottom = 0.0
+[node name="ViewportDivider" type="ColorRect" parent="UIRoot" unique_id=286123739]
 offset_left = 922.0
-offset_top = 0.0
 offset_right = 1280.0
 offset_bottom = 720.0
-color = Color(0.14, 0.14, 0.14, 1.0)
 mouse_filter = 2
+color = Color(0.14, 0.14, 0.14, 1)
 
-
-[node name="TopResourceBar" type="PanelContainer" parent="UIRoot"]
-mouse_filter = 2
-grow_vertical = 2
-grow_horizontal = 2
-offset_bottom = 50.0
-offset_right = 908.0
-offset_top = 16.0
+[node name="TopResourceBar" type="PanelContainer" parent="UIRoot" unique_id=69948473]
 offset_left = 16.0
-anchor_bottom = 0.0
-anchor_right = 0.0
-anchor_top = 0.0
-anchor_left = 0.0
+offset_top = 16.0
+offset_right = 908.0
+offset_bottom = 50.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
 
-[node name="HBoxContainer" type="HBoxContainer" parent="UIRoot/TopResourceBar"]
+[node name="HBoxContainer" type="HBoxContainer" parent="UIRoot/TopResourceBar" unique_id=1918795828]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="PopulationLabel" type="Label" parent="UIRoot/TopResourceBar/HBoxContainer"]
+[node name="PopulationLabel" type="Label" parent="UIRoot/TopResourceBar/HBoxContainer" unique_id=1731007054]
 custom_minimum_size = Vector2(108, 26)
 layout_mode = 2
+theme_override_font_sizes/font_size = 14
 text = "人口 0"
 horizontal_alignment = 1
 vertical_alignment = 1
-theme_override_font_sizes/font_size = 14
 
-[node name="PopulationCapLabel" type="Label" parent="UIRoot/TopResourceBar/HBoxContainer"]
+[node name="PopulationCapLabel" type="Label" parent="UIRoot/TopResourceBar/HBoxContainer" unique_id=1342346825]
 custom_minimum_size = Vector2(108, 26)
 layout_mode = 2
+theme_override_font_sizes/font_size = 14
 text = "上限 0"
 horizontal_alignment = 1
 vertical_alignment = 1
-theme_override_font_sizes/font_size = 14
 
-[node name="GoldLabel" type="Label" parent="UIRoot/TopResourceBar/HBoxContainer"]
+[node name="GoldLabel" type="Label" parent="UIRoot/TopResourceBar/HBoxContainer" unique_id=971001720]
 custom_minimum_size = Vector2(108, 26)
 layout_mode = 2
+theme_override_font_sizes/font_size = 14
 text = "金币 0"
 horizontal_alignment = 1
 vertical_alignment = 1
-theme_override_font_sizes/font_size = 14
 
-[node name="FoodLabel" type="Label" parent="UIRoot/TopResourceBar/HBoxContainer"]
+[node name="FoodLabel" type="Label" parent="UIRoot/TopResourceBar/HBoxContainer" unique_id=58768590]
 custom_minimum_size = Vector2(108, 26)
 layout_mode = 2
+theme_override_font_sizes/font_size = 14
 text = "食物 0"
 horizontal_alignment = 1
 vertical_alignment = 1
-theme_override_font_sizes/font_size = 14
 
-[node name="WoodLabel" type="Label" parent="UIRoot/TopResourceBar/HBoxContainer"]
+[node name="WoodLabel" type="Label" parent="UIRoot/TopResourceBar/HBoxContainer" unique_id=685928454]
 custom_minimum_size = Vector2(108, 26)
 layout_mode = 2
+theme_override_font_sizes/font_size = 14
 text = "木材 0"
 horizontal_alignment = 1
 vertical_alignment = 1
-theme_override_font_sizes/font_size = 14
 
-[node name="StoneLabel" type="Label" parent="UIRoot/TopResourceBar/HBoxContainer"]
+[node name="StoneLabel" type="Label" parent="UIRoot/TopResourceBar/HBoxContainer" unique_id=2082208461]
 custom_minimum_size = Vector2(108, 26)
 layout_mode = 2
+theme_override_font_sizes/font_size = 14
 text = "石料 0"
 horizontal_alignment = 1
 vertical_alignment = 1
-theme_override_font_sizes/font_size = 14
 
 [node name="PlacementPanel" type="PanelContainer" parent="UIRoot" unique_id=1428396901]
-grow_vertical = 2
-grow_horizontal = 0
-offset_bottom = 704.0
-offset_right = -16.0
-offset_top = 332.0
-offset_left = -352.0
-anchor_bottom = 0.0
-anchor_right = 1.0
-anchor_top = 0.0
+anchors_preset = 1
 anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -352.0
+offset_top = 332.0
+offset_right = -16.0
+offset_bottom = 704.0
+grow_horizontal = 0
+grow_vertical = 2
 
 [node name="VBoxContainer" type="VBoxContainer" parent="UIRoot/PlacementPanel" unique_id=2037594381]
 layout_mode = 2
@@ -154,20 +136,18 @@ theme_override_constants/separation = 6
 [node name="TitleLabel" type="Label" parent="UIRoot/PlacementPanel/VBoxContainer" unique_id=1447070492]
 visible = false
 layout_mode = 2
-text = ""
 theme_override_font_sizes/font_size = 18
 
 [node name="HelpLabel" type="Label" parent="UIRoot/PlacementPanel/VBoxContainer" unique_id=1454282518]
 visible = false
 layout_mode = 2
-text = ""
 theme_override_font_sizes/font_size = 13
 
-[node name="GridContainer" type="GridContainer" parent="UIRoot/PlacementPanel/VBoxContainer"]
+[node name="GridContainer" type="GridContainer" parent="UIRoot/PlacementPanel/VBoxContainer" unique_id=927438284]
 layout_mode = 2
-columns = 2
 theme_override_constants/h_separation = 8
 theme_override_constants/v_separation = 8
+columns = 2
 
 [node name="FarmButton" type="Button" parent="UIRoot/PlacementPanel/VBoxContainer/GridContainer" unique_id=1680959659]
 custom_minimum_size = Vector2(152, 64)
@@ -190,131 +170,127 @@ layout_mode = 2
 text = "住宅"
 
 [node name="CancelButton" type="Button" parent="UIRoot/PlacementPanel/VBoxContainer" unique_id=1676375453]
-visible = true
 layout_mode = 2
 text = "取消"
 
 [node name="StatusLabel" type="Label" parent="UIRoot/PlacementPanel/VBoxContainer" unique_id=1869584687]
-autowrap_mode = 2
 custom_minimum_size = Vector2(304, 42)
-visible = true
 layout_mode = 2
-text = ""
 theme_override_font_sizes/font_size = 13
+autowrap_mode = 2
 
-[node name="WorkerControlPanel" type="PanelContainer" parent="UIRoot/PlacementPanel/VBoxContainer"]
-layout_mode = 2
+[node name="WorkerControlPanel" type="PanelContainer" parent="UIRoot/PlacementPanel/VBoxContainer" unique_id=514391951]
 custom_minimum_size = Vector2(304, 86)
+layout_mode = 2
 
-[node name="VBoxContainer" type="VBoxContainer" parent="UIRoot/PlacementPanel/VBoxContainer/WorkerControlPanel"]
+[node name="VBoxContainer" type="VBoxContainer" parent="UIRoot/PlacementPanel/VBoxContainer/WorkerControlPanel" unique_id=569501016]
 layout_mode = 2
 theme_override_constants/separation = 4
 
-[node name="WorkerStatusLabel" type="Label" parent="UIRoot/PlacementPanel/VBoxContainer/WorkerControlPanel/VBoxContainer"]
+[node name="WorkerStatusLabel" type="Label" parent="UIRoot/PlacementPanel/VBoxContainer/WorkerControlPanel/VBoxContainer" unique_id=1474019880]
 layout_mode = 2
-text = "工人分配"
 theme_override_font_sizes/font_size = 13
+text = "工人分配"
 
-[node name="HBoxContainer" type="HBoxContainer" parent="UIRoot/PlacementPanel/VBoxContainer/WorkerControlPanel/VBoxContainer"]
+[node name="HBoxContainer" type="HBoxContainer" parent="UIRoot/PlacementPanel/VBoxContainer/WorkerControlPanel/VBoxContainer" unique_id=1481722793]
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="WorkerMinusButton" type="Button" parent="UIRoot/PlacementPanel/VBoxContainer/WorkerControlPanel/VBoxContainer/HBoxContainer"]
+[node name="WorkerMinusButton" type="Button" parent="UIRoot/PlacementPanel/VBoxContainer/WorkerControlPanel/VBoxContainer/HBoxContainer" unique_id=1723430801]
 custom_minimum_size = Vector2(56, 36)
 layout_mode = 2
 text = "-"
 
-[node name="WorkerCountLabel" type="Label" parent="UIRoot/PlacementPanel/VBoxContainer/WorkerControlPanel/VBoxContainer/HBoxContainer"]
+[node name="WorkerCountLabel" type="Label" parent="UIRoot/PlacementPanel/VBoxContainer/WorkerControlPanel/VBoxContainer/HBoxContainer" unique_id=1743491943]
 custom_minimum_size = Vector2(172, 28)
 layout_mode = 2
+theme_override_font_sizes/font_size = 13
 text = "工人 0/0"
 horizontal_alignment = 1
 vertical_alignment = 1
-theme_override_font_sizes/font_size = 13
 
-[node name="WorkerPlusButton" type="Button" parent="UIRoot/PlacementPanel/VBoxContainer/WorkerControlPanel/VBoxContainer/HBoxContainer"]
+[node name="WorkerPlusButton" type="Button" parent="UIRoot/PlacementPanel/VBoxContainer/WorkerControlPanel/VBoxContainer/HBoxContainer" unique_id=1913263730]
 custom_minimum_size = Vector2(56, 36)
 layout_mode = 2
 text = "+"
 
-[node name="WorkerPopupPanel" type="PanelContainer" parent="UIRoot"]
+[node name="WorkerPopupPanel" type="PanelContainer" parent="UIRoot" unique_id=554989847]
 visible = false
 offset_left = 120.0
 offset_top = 120.0
 offset_right = 356.0
 offset_bottom = 198.0
 
-[node name="MarginContainer" type="MarginContainer" parent="UIRoot/WorkerPopupPanel"]
+[node name="MarginContainer" type="MarginContainer" parent="UIRoot/WorkerPopupPanel" unique_id=997188745]
 layout_mode = 2
 theme_override_constants/margin_left = 8
 theme_override_constants/margin_top = 6
 theme_override_constants/margin_right = 8
 theme_override_constants/margin_bottom = 6
 
-[node name="VBoxContainer" type="VBoxContainer" parent="UIRoot/WorkerPopupPanel/MarginContainer"]
+[node name="VBoxContainer" type="VBoxContainer" parent="UIRoot/WorkerPopupPanel/MarginContainer" unique_id=1150418690]
 layout_mode = 2
 theme_override_constants/separation = 4
 
-[node name="WorkerPopupStatusLabel" type="Label" parent="UIRoot/WorkerPopupPanel/MarginContainer/VBoxContainer"]
+[node name="WorkerPopupStatusLabel" type="Label" parent="UIRoot/WorkerPopupPanel/MarginContainer/VBoxContainer" unique_id=2027898916]
 layout_mode = 2
+theme_override_font_sizes/font_size = 13
 text = "工人分配"
 horizontal_alignment = 1
-theme_override_font_sizes/font_size = 13
 
-[node name="HBoxContainer" type="HBoxContainer" parent="UIRoot/WorkerPopupPanel/MarginContainer/VBoxContainer"]
+[node name="HBoxContainer" type="HBoxContainer" parent="UIRoot/WorkerPopupPanel/MarginContainer/VBoxContainer" unique_id=455844994]
 layout_mode = 2
-alignment = 1
 theme_override_constants/separation = 6
+alignment = 1
 
-[node name="WorkerPopupMinusButton" type="Button" parent="UIRoot/WorkerPopupPanel/MarginContainer/VBoxContainer/HBoxContainer"]
+[node name="WorkerPopupMinusButton" type="Button" parent="UIRoot/WorkerPopupPanel/MarginContainer/VBoxContainer/HBoxContainer" unique_id=2017438188]
 custom_minimum_size = Vector2(44, 34)
 layout_mode = 2
 text = "-"
 
-[node name="WorkerPopupCountLabel" type="Label" parent="UIRoot/WorkerPopupPanel/MarginContainer/VBoxContainer/HBoxContainer"]
+[node name="WorkerPopupCountLabel" type="Label" parent="UIRoot/WorkerPopupPanel/MarginContainer/VBoxContainer/HBoxContainer" unique_id=1601876380]
 custom_minimum_size = Vector2(120, 28)
 layout_mode = 2
+theme_override_font_sizes/font_size = 13
 text = "0/0"
 horizontal_alignment = 1
 vertical_alignment = 1
-theme_override_font_sizes/font_size = 13
 
-[node name="WorkerPopupPlusButton" type="Button" parent="UIRoot/WorkerPopupPanel/MarginContainer/VBoxContainer/HBoxContainer"]
+[node name="WorkerPopupPlusButton" type="Button" parent="UIRoot/WorkerPopupPanel/MarginContainer/VBoxContainer/HBoxContainer" unique_id=1790054894]
 custom_minimum_size = Vector2(44, 34)
 layout_mode = 2
 text = "+"
 
-[node name="BuildCostTooltipPanel" type="PanelContainer" parent="UIRoot"]
+[node name="BuildCostTooltipPanel" type="PanelContainer" parent="UIRoot" unique_id=1117698046]
 visible = false
-mouse_filter = 2
 offset_left = 120.0
 offset_top = 120.0
 offset_right = 380.0
 offset_bottom = 220.0
+mouse_filter = 2
 
-[node name="MarginContainer" type="MarginContainer" parent="UIRoot/BuildCostTooltipPanel"]
+[node name="MarginContainer" type="MarginContainer" parent="UIRoot/BuildCostTooltipPanel" unique_id=2101047732]
 layout_mode = 2
 theme_override_constants/margin_left = 8
 theme_override_constants/margin_top = 6
 theme_override_constants/margin_right = 8
 theme_override_constants/margin_bottom = 6
 
-[node name="VBoxContainer" type="VBoxContainer" parent="UIRoot/BuildCostTooltipPanel/MarginContainer"]
+[node name="VBoxContainer" type="VBoxContainer" parent="UIRoot/BuildCostTooltipPanel/MarginContainer" unique_id=120713733]
 layout_mode = 2
 theme_override_constants/separation = 4
 
-[node name="TitleLabel" type="Label" parent="UIRoot/BuildCostTooltipPanel/MarginContainer/VBoxContainer"]
+[node name="TitleLabel" type="Label" parent="UIRoot/BuildCostTooltipPanel/MarginContainer/VBoxContainer" unique_id=1448004744]
 layout_mode = 2
+theme_override_font_sizes/font_size = 13
 text = "建造消耗"
 horizontal_alignment = 1
-theme_override_font_sizes/font_size = 13
 
-[node name="CostLabel" type="Label" parent="UIRoot/BuildCostTooltipPanel/MarginContainer/VBoxContainer"]
-layout_mode = 2
-autowrap_mode = 2
+[node name="CostLabel" type="Label" parent="UIRoot/BuildCostTooltipPanel/MarginContainer/VBoxContainer" unique_id=2100625447]
 custom_minimum_size = Vector2(220, 54)
-text = ""
+layout_mode = 2
 theme_override_font_sizes/font_size = 13
+autowrap_mode = 2
 
 [node name="EconomyPanel" type="PanelContainer" parent="UIRoot" unique_id=1329365401]
 visible = false
@@ -330,234 +306,216 @@ theme_override_constants/separation = 6
 [node name="TitleLabel" type="Label" parent="UIRoot/EconomyPanel/VBoxContainer" unique_id=1734525629]
 visible = false
 layout_mode = 2
-text = ""
 theme_override_font_sizes/font_size = 18
 
 [node name="EconomyStatusLabel" type="Label" parent="UIRoot/EconomyPanel/VBoxContainer" unique_id=1394713257]
 custom_minimum_size = Vector2(330, 82)
 layout_mode = 2
-text = "库存：食物 0 / 木材 0 / 石料 0 / 金币 0"
 theme_override_font_sizes/font_size = 13
+text = "库存：食物 0 / 木材 0 / 石料 0 / 金币 0"
 
-
-[node name="TimeControlPanel" type="PanelContainer" parent="UIRoot"]
-mouse_filter = 2
-grow_vertical = 2
-grow_horizontal = 0
-offset_bottom = 112.0
-offset_right = -16.0
-offset_top = 16.0
-offset_left = -352.0
-anchor_bottom = 0.0
-anchor_right = 1.0
-anchor_top = 0.0
+[node name="TimeControlPanel" type="PanelContainer" parent="UIRoot" unique_id=334816306]
+anchors_preset = 1
 anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -352.0
+offset_top = 16.0
+offset_right = -16.0
+offset_bottom = 112.0
+grow_horizontal = 0
+grow_vertical = 2
+mouse_filter = 2
 
-[node name="VBoxContainer" type="VBoxContainer" parent="UIRoot/TimeControlPanel"]
+[node name="VBoxContainer" type="VBoxContainer" parent="UIRoot/TimeControlPanel" unique_id=2091283066]
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="TitleLabel" type="Label" parent="UIRoot/TimeControlPanel/VBoxContainer"]
+[node name="TitleLabel" type="Label" parent="UIRoot/TimeControlPanel/VBoxContainer" unique_id=1318623138]
 visible = false
 layout_mode = 2
-text = ""
 theme_override_font_sizes/font_size = 18
 
-[node name="HelpLabel" type="Label" parent="UIRoot/TimeControlPanel/VBoxContainer"]
+[node name="HelpLabel" type="Label" parent="UIRoot/TimeControlPanel/VBoxContainer" unique_id=897539403]
 visible = false
 layout_mode = 2
-text = ""
 theme_override_font_sizes/font_size = 13
 
-[node name="HBoxContainer" type="HBoxContainer" parent="UIRoot/TimeControlPanel/VBoxContainer"]
+[node name="HBoxContainer" type="HBoxContainer" parent="UIRoot/TimeControlPanel/VBoxContainer" unique_id=865317401]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="SpeedButton" type="Button" parent="UIRoot/TimeControlPanel/VBoxContainer/HBoxContainer"]
+[node name="SpeedButton" type="Button" parent="UIRoot/TimeControlPanel/VBoxContainer/HBoxContainer" unique_id=1988926236]
 layout_mode = 2
 text = "速度：1x"
 
-[node name="PauseButton" type="Button" parent="UIRoot/TimeControlPanel/VBoxContainer/HBoxContainer"]
+[node name="PauseButton" type="Button" parent="UIRoot/TimeControlPanel/VBoxContainer/HBoxContainer" unique_id=1568618990]
 layout_mode = 2
 text = "暂停"
 
-[node name="TimeControlStatusLabel" type="Label" parent="UIRoot/TimeControlPanel/VBoxContainer"]
-autowrap_mode = 2
+[node name="TimeControlStatusLabel" type="Label" parent="UIRoot/TimeControlPanel/VBoxContainer" unique_id=1218408638]
 custom_minimum_size = Vector2(304, 36)
 layout_mode = 2
-text = "时间：--:-- / 运行中"
 theme_override_font_sizes/font_size = 13
+text = "时间：--:-- / 运行中"
+autowrap_mode = 2
 
-[node name="TaxPanel" type="PanelContainer" parent="UIRoot"]
-mouse_filter = 2
-grow_vertical = 2
-grow_horizontal = 0
-offset_bottom = 224.0
-offset_right = -16.0
-offset_top = 124.0
-offset_left = -352.0
-anchor_bottom = 0.0
-anchor_right = 1.0
-anchor_top = 0.0
+[node name="TaxPanel" type="PanelContainer" parent="UIRoot" unique_id=1221653287]
+anchors_preset = 1
 anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -352.0
+offset_top = 124.0
+offset_right = -16.0
+offset_bottom = 224.0
+grow_horizontal = 0
+grow_vertical = 2
+mouse_filter = 2
 
-[node name="VBoxContainer" type="VBoxContainer" parent="UIRoot/TaxPanel"]
+[node name="VBoxContainer" type="VBoxContainer" parent="UIRoot/TaxPanel" unique_id=760741219]
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="TitleLabel" type="Label" parent="UIRoot/TaxPanel/VBoxContainer"]
+[node name="TitleLabel" type="Label" parent="UIRoot/TaxPanel/VBoxContainer" unique_id=623057666]
 visible = false
 layout_mode = 2
-text = ""
 theme_override_font_sizes/font_size = 18
 
-[node name="HelpLabel" type="Label" parent="UIRoot/TaxPanel/VBoxContainer"]
+[node name="HelpLabel" type="Label" parent="UIRoot/TaxPanel/VBoxContainer" unique_id=53151051]
 visible = false
 layout_mode = 2
-text = ""
 theme_override_font_sizes/font_size = 13
 
-[node name="TaxPolicyButton" type="Button" parent="UIRoot/TaxPanel/VBoxContainer"]
+[node name="TaxPolicyButton" type="Button" parent="UIRoot/TaxPanel/VBoxContainer" unique_id=1876307234]
 layout_mode = 2
 text = "税率：正常税"
 
-[node name="TaxStatusLabel" type="Label" parent="UIRoot/TaxPanel/VBoxContainer"]
-autowrap_mode = 2
+[node name="TaxStatusLabel" type="Label" parent="UIRoot/TaxPanel/VBoxContainer" unique_id=1537300643]
 custom_minimum_size = Vector2(304, 58)
 layout_mode = 2
-text = "税收状态：未初始化"
 theme_override_font_sizes/font_size = 13
+text = "税收状态：未初始化"
+autowrap_mode = 2
 
-
-[node name="HappinessPanel" type="PanelContainer" parent="UIRoot"]
-mouse_filter = 2
-grow_vertical = 2
-grow_horizontal = 0
-offset_bottom = 320.0
-offset_right = -16.0
-offset_top = 236.0
-offset_left = -352.0
-anchor_bottom = 0.0
-anchor_right = 1.0
-anchor_top = 0.0
+[node name="HappinessPanel" type="PanelContainer" parent="UIRoot" unique_id=2091058366]
+anchors_preset = 1
 anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -352.0
+offset_top = 236.0
+offset_right = -16.0
+offset_bottom = 320.0
+grow_horizontal = 0
+grow_vertical = 2
+mouse_filter = 2
 
-[node name="VBoxContainer" type="VBoxContainer" parent="UIRoot/HappinessPanel"]
+[node name="VBoxContainer" type="VBoxContainer" parent="UIRoot/HappinessPanel" unique_id=1835182962]
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="TitleLabel" type="Label" parent="UIRoot/HappinessPanel/VBoxContainer"]
+[node name="TitleLabel" type="Label" parent="UIRoot/HappinessPanel/VBoxContainer" unique_id=491356312]
 visible = false
 layout_mode = 2
-text = ""
 theme_override_font_sizes/font_size = 18
 
-[node name="HelpLabel" type="Label" parent="UIRoot/HappinessPanel/VBoxContainer"]
+[node name="HelpLabel" type="Label" parent="UIRoot/HappinessPanel/VBoxContainer" unique_id=2002825016]
 visible = false
 layout_mode = 2
-text = ""
 theme_override_font_sizes/font_size = 13
 
-[node name="HappinessStatusLabel" type="Label" parent="UIRoot/HappinessPanel/VBoxContainer"]
-autowrap_mode = 2
+[node name="HappinessStatusLabel" type="Label" parent="UIRoot/HappinessPanel/VBoxContainer" unique_id=1969243287]
 custom_minimum_size = Vector2(304, 64)
 layout_mode = 2
-text = "幸福度：未初始化"
 theme_override_font_sizes/font_size = 13
+text = "幸福度：未初始化"
+autowrap_mode = 2
 
-[node name="RiotPanel" type="PanelContainer" parent="UIRoot"]
-mouse_filter = 2
+[node name="RiotPanel" type="PanelContainer" parent="UIRoot" unique_id=903565417]
 visible = false
 offset_left = 404.0
 offset_top = 404.0
 offset_right = 784.0
 offset_bottom = 640.0
+mouse_filter = 2
 
-[node name="VBoxContainer" type="VBoxContainer" parent="UIRoot/RiotPanel"]
+[node name="VBoxContainer" type="VBoxContainer" parent="UIRoot/RiotPanel" unique_id=1700694080]
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="TitleLabel" type="Label" parent="UIRoot/RiotPanel/VBoxContainer"]
+[node name="TitleLabel" type="Label" parent="UIRoot/RiotPanel/VBoxContainer" unique_id=1274786862]
 visible = false
 layout_mode = 2
-text = ""
 theme_override_font_sizes/font_size = 18
 
-[node name="HelpLabel" type="Label" parent="UIRoot/RiotPanel/VBoxContainer"]
+[node name="HelpLabel" type="Label" parent="UIRoot/RiotPanel/VBoxContainer" unique_id=897294201]
 visible = false
 layout_mode = 2
-text = ""
 theme_override_font_sizes/font_size = 13
 
-[node name="RiotStatusLabel" type="Label" parent="UIRoot/RiotPanel/VBoxContainer"]
+[node name="RiotStatusLabel" type="Label" parent="UIRoot/RiotPanel/VBoxContainer" unique_id=179917771]
 custom_minimum_size = Vector2(340, 138)
 layout_mode = 2
-text = "未初始化"
 theme_override_font_sizes/font_size = 13
+text = "未初始化"
 
-[node name="VictoryPanel" type="PanelContainer" parent="UIRoot"]
-mouse_filter = 2
+[node name="VictoryPanel" type="PanelContainer" parent="UIRoot" unique_id=1852738365]
 visible = false
 offset_left = 796.0
 offset_top = 16.0
 offset_right = 1196.0
 offset_bottom = 230.0
+mouse_filter = 2
 
-[node name="VBoxContainer" type="VBoxContainer" parent="UIRoot/VictoryPanel"]
+[node name="VBoxContainer" type="VBoxContainer" parent="UIRoot/VictoryPanel" unique_id=466210458]
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="TitleLabel" type="Label" parent="UIRoot/VictoryPanel/VBoxContainer"]
+[node name="TitleLabel" type="Label" parent="UIRoot/VictoryPanel/VBoxContainer" unique_id=357614935]
 visible = false
 layout_mode = 2
-text = ""
 theme_override_font_sizes/font_size = 18
 
-[node name="HelpLabel" type="Label" parent="UIRoot/VictoryPanel/VBoxContainer"]
+[node name="HelpLabel" type="Label" parent="UIRoot/VictoryPanel/VBoxContainer" unique_id=486969684]
 visible = false
 layout_mode = 2
-text = ""
 theme_override_font_sizes/font_size = 13
 
-[node name="VictoryStatusLabel" type="Label" parent="UIRoot/VictoryPanel/VBoxContainer"]
+[node name="VictoryStatusLabel" type="Label" parent="UIRoot/VictoryPanel/VBoxContainer" unique_id=508124012]
 custom_minimum_size = Vector2(360, 128)
 layout_mode = 2
-text = "未初始化"
 theme_override_font_sizes/font_size = 13
+text = "未初始化"
 
-[node name="HudPanel" type="PanelContainer" parent="UIRoot"]
-mouse_filter = 2
+[node name="HudPanel" type="PanelContainer" parent="UIRoot" unique_id=1434431532]
 visible = false
 offset_left = 16.0
 offset_top = 56.0
 offset_right = 386.0
 offset_bottom = 168.0
+mouse_filter = 2
 
-[node name="VBoxContainer" type="VBoxContainer" parent="UIRoot/HudPanel"]
+[node name="VBoxContainer" type="VBoxContainer" parent="UIRoot/HudPanel" unique_id=330926128]
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="TitleLabel" type="Label" parent="UIRoot/HudPanel/VBoxContainer"]
+[node name="TitleLabel" type="Label" parent="UIRoot/HudPanel/VBoxContainer" unique_id=49662781]
 visible = false
 layout_mode = 2
-text = ""
 theme_override_font_sizes/font_size = 18
 
-[node name="HelpLabel" type="Label" parent="UIRoot/HudPanel/VBoxContainer"]
+[node name="HelpLabel" type="Label" parent="UIRoot/HudPanel/VBoxContainer" unique_id=935648211]
 visible = false
 layout_mode = 2
-text = ""
 theme_override_font_sizes/font_size = 13
 
-[node name="HudStatusLabel" type="Label" parent="UIRoot/HudPanel/VBoxContainer"]
+[node name="HudStatusLabel" type="Label" parent="UIRoot/HudPanel/VBoxContainer" unique_id=878736655]
 custom_minimum_size = Vector2(340, 72)
 layout_mode = 2
-text = "时间：未初始化"
 theme_override_font_sizes/font_size = 13
+text = "时间：未初始化"
 
-[node name="EventLogLabel" type="Label" parent="UIRoot/HudPanel/VBoxContainer"]
+[node name="EventLogLabel" type="Label" parent="UIRoot/HudPanel/VBoxContainer" unique_id=288760249]
 custom_minimum_size = Vector2(340, 28)
 layout_mode = 2
+theme_override_font_sizes/font_size = 13
 text = "暂无"
 autowrap_mode = 2
-theme_override_font_sizes/font_size = 13
