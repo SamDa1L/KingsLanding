@@ -8,7 +8,7 @@
 script = ExtResource("1_hougo")
 rule_name = "Grassplain_TL"
 ground_zone = "top"
-ground_role = "T"
+ground_role = "TL"
 top_tag = "outer"
 right_tag = "plain_edge_top"
 bottom_tag = "plain_edge_left"
@@ -53,6 +53,7 @@ ground_role = "L"
 top_tag = "plain_edge_left"
 bottom_tag = "plain_edge_left"
 left_tag = "outer"
+tile_set = ExtResource("2_i5clt")
 tile_atlas_coords = Vector2i(0, 1)
 metadata/_custom_type_script = "uid://c8hakry0avjrx"
 
@@ -154,7 +155,7 @@ metadata/_custom_type_script = "uid://c8hakry0avjrx"
 
 [sub_resource type="Resource" id="Resource_ekt5t"]
 script = ExtResource("1_hougo")
-rule_name = "Grassplain_M1"
+rule_name = "Grassplain_M2"
 variant_index = 2
 tile_set = ExtResource("2_i5clt")
 tile_source_id = 0
@@ -456,7 +457,7 @@ buildable = false
 passable = false
 tile_set = ExtResource("2_i5clt")
 tile_source_id = 0
-tile_atlas_coords = Vector2i(3, -1)
+tile_atlas_coords = Vector2i(3, 5)
 metadata/_custom_type_script = "uid://c8hakry0avjrx"
 
 [resource]

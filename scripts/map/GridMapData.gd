@@ -1,7 +1,9 @@
 ﻿class_name GridMapData
 extends RefCounted
 
-const DEFAULT_EMPTY_TERRAIN := 5
+const MapTypes := preload("res://scripts/map/MapTypes.gd")
+
+const DEFAULT_EMPTY_TERRAIN := MapTypes.TerrainType.EMPTY
 
 var width: int = 0
 var height: int = 0

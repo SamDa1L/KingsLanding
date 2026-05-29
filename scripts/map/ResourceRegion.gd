@@ -1,9 +1,11 @@
 class_name ResourceRegion
 extends RefCounted
 
-const TERRAIN_FOREST := 1
-const TERRAIN_STONE := 2
-const TERRAIN_EMPTY := 5
+const MapTypes := preload("res://scripts/map/MapTypes.gd")
+
+const TERRAIN_FOREST := MapTypes.TerrainType.FOREST
+const TERRAIN_STONE := MapTypes.TerrainType.STONE
+const TERRAIN_EMPTY := MapTypes.TerrainType.EMPTY
 
 const RESOURCE_WOOD: StringName = &"wood"
 const RESOURCE_STONE: StringName = &"stone"
