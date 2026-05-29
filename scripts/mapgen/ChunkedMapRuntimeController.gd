@@ -3,7 +3,6 @@ extends RefCounted
 
 
 const GeneratedMapDataScript := preload("res://scripts/mapgen/GeneratedMapData.gd")
-const NoiseBasedMapGeneratorScript := preload("res://scripts/mapgen/NoiseBasedMapGenerator.gd")
 
 const DEFAULT_ACTIVE_RADIUS := 1
 const RUNTIME_INCLUDE_RESOURCES := false
@@ -135,21 +134,17 @@ func _generate_chunk_tiles(chunk_coords: Vector2i) -> Dictionary:
 	if generator == null:
 		return result
 
-	var single_chunk_list: Array[Vector2i] = [chunk_coords]
-	var generated_chunk_map = generator.generate_chunk_map(
-		map_seed,
-		single_chunk_list,
-		chunk_size,
-		RUNTIME_INCLUDE_RESOURCES
-	)
-	for cell in generated_chunk_map.get_all_cells():
-		var tile = generated_chunk_map.get_tile(cell)
-		if tile == null:
-			continue
-		var target_cell: Vector2i = cell + generated_chunk_map.world_origin
-		var copy = tile.clone()
-		copy.cell = target_cell
-		result[target_cell] = copy
+	var chunk_origin: Vector2i = chunk_coords * chunk_size
+	for local_y in range(chunk_size):
+		for local_x in range(chunk_size):
+			var target_cell := chunk_origin + Vector2i(local_x, local_y)
+			var tile = generator.generate_tile(map_seed, target_cell)
+			if tile == null:
+				continue
+			tile.cell = target_cell
+			if RUNTIME_INCLUDE_RESOURCES and generator.has_method("apply_runtime_resource_to_tile"):
+				generator.apply_runtime_resource_to_tile(tile, map_seed)
+			result[target_cell] = tile.clone()
 
 	return result
 
@@ -248,25 +243,27 @@ func _get_chunk_bounds_from_desired_chunks(desired_chunks: Dictionary) -> Dictio
 func _render_chunk_cells(cells: Array[Vector2i]) -> void:
 	if renderer == null or cells.is_empty():
 		return
-	if base_layer != null and renderer.has_method("render_base_cells"):
-		renderer.render_base_cells(base_layer, map_data, cells)
-	if resource_layer != null and renderer.has_method("render_resource_cells"):
-		renderer.render_resource_cells(resource_layer, map_data, cells)
-	if transition_layer != null and renderer.has_method("render_transition_cells"):
-		renderer.render_transition_cells(transition_layer, map_data, cells)
+	for cell in cells:
+		if base_layer != null and renderer.has_method("render_base_cell"):
+			renderer.render_base_cell(base_layer, map_data, cell)
+		if resource_layer != null and renderer.has_method("render_resource_cell"):
+			renderer.render_resource_cell(resource_layer, map_data, cell)
+		if transition_layer != null and renderer.has_method("render_transition_cell"):
+			renderer.render_transition_cell(transition_layer, map_data, cell)
 
 
 func _clear_chunk_cells(cells: Array[Vector2i]) -> void:
 	if cells.is_empty():
 		return
-	if base_layer != null:
-		for cell in cells:
+	for cell in cells:
+		if renderer != null and renderer.has_method("clear_cell_from_layers"):
+			renderer.clear_cell_from_layers(cell, base_layer, resource_layer, transition_layer)
+			continue
+		if base_layer != null:
 			base_layer.set_cell(cell, -1)
-	if resource_layer != null:
-		for cell in cells:
+		if resource_layer != null:
 			resource_layer.set_cell(cell, -1)
-	if transition_layer != null:
-		for cell in cells:
+		if transition_layer != null:
 			transition_layer.set_cell(cell, -1)
 
 

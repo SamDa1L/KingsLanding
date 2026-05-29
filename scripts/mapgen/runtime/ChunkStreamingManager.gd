@@ -25,6 +25,8 @@ enum ChunkState {
 @export var max_tile_writes_per_frame: int = 768
 @export var max_unload_cells_per_frame: int = 1024
 @export var keep_radius: int = 5
+@export var enable_chunk_cache: bool = true
+@export var max_cached_chunks: int = 64
 @export var include_resources_runtime: bool = false
 @export var include_transitions_runtime: bool = false
 
@@ -41,6 +43,8 @@ var generation_queue: Array[Vector2i] = []
 var apply_queue: Array[Dictionary] = []
 var unload_queue: Array[Dictionary] = []
 var loaded_chunks: Dictionary = {}
+var cached_chunks: Dictionary = {}
+var cached_chunk_order: Array[Vector2i] = []
 var required_chunks: Dictionary = {}
 var preload_chunks: Dictionary = {}
 var active_generation_task: Dictionary = {}
@@ -56,6 +60,9 @@ var tile_writes_this_frame: int = 0
 var last_apply_time_ms: float = 0.0
 var unloaded_cells_this_frame: int = 0
 var last_unload_time_ms: float = 0.0
+var last_loaded_debug_chunks: Array[Vector2i] = []
+var last_unloaded_debug_chunks: Array[Vector2i] = []
+var last_refreshed_debug_chunks: Array[Vector2i] = []
 
 
 func _ready() -> void:
@@ -66,6 +73,9 @@ func _process(delta: float) -> void:
 	process_frame_count += 1
 	if not is_runtime_initialized:
 		return
+	last_loaded_debug_chunks.clear()
+	last_unloaded_debug_chunks.clear()
+	last_refreshed_debug_chunks.clear()
 	_update_camera_snapshot(delta)
 	_update_required_chunks()
 	_process_generation_budget()
@@ -98,6 +108,8 @@ func setup_runtime(
 	apply_queue.clear()
 	unload_queue.clear()
 	loaded_chunks.clear()
+	cached_chunks.clear()
+	cached_chunk_order.clear()
 	required_chunks.clear()
 	preload_chunks.clear()
 	active_generation_task.clear()
@@ -110,6 +122,9 @@ func setup_runtime(
 	last_apply_time_ms = 0.0
 	unloaded_cells_this_frame = 0
 	last_unload_time_ms = 0.0
+	last_loaded_debug_chunks.clear()
+	last_unloaded_debug_chunks.clear()
+	last_refreshed_debug_chunks.clear()
 	last_camera_position = _get_camera_position()
 	is_runtime_initialized = true
 	_update_camera_snapshot(1.0)
@@ -117,16 +132,23 @@ func setup_runtime(
 
 
 func get_debug_snapshot() -> Dictionary:
+	var visible_chunk_rect := get_visible_chunk_rect()
+	var keep_chunk_rect := get_keep_chunk_rect()
 	return {
 		"ready": is_runtime_initialized,
 		"process_frames": get_process_frame_count(),
 		"camera_cell": get_current_camera_cell(),
 		"camera_chunk": get_current_camera_chunk(),
+		"visible_chunk_rect": visible_chunk_rect,
+		"keep_chunk_rect": keep_chunk_rect,
+		"visible_chunk_count_estimate": max(visible_chunk_rect.size.x, 0) * max(visible_chunk_rect.size.y, 0),
 		"generation_queue_size": get_generation_queue_size(),
 		"generation_queue_preview": get_generation_queue_preview(3),
 		"apply_queue_size": get_apply_queue_size(),
 		"unload_queue_size": get_unload_queue_size(),
 		"loaded_chunk_count": get_loaded_chunk_count(),
+		"loaded_chunk_preview": get_loaded_chunk_preview(3),
+		"cached_chunk_count": get_cached_chunk_count(),
 		"required_chunk_count": get_required_chunk_count(),
 		"queued_chunk_count": get_queued_chunk_count(),
 		"queued_state_chunk_count": get_queued_state_chunk_count(),
@@ -142,6 +164,9 @@ func get_debug_snapshot() -> Dictionary:
 		"visible_chunk_count": get_chunk_state_count(ChunkState.VISIBLE),
 		"applying_chunk_count": get_chunk_state_count(ChunkState.APPLYING),
 		"unloading_chunk_count": get_chunk_state_count(ChunkState.UNLOADING),
+		"last_loaded_chunk_preview": get_last_loaded_chunk_preview(3),
+		"last_unloaded_chunk_preview": get_last_unloaded_chunk_preview(3),
+		"last_refreshed_chunk_preview": get_last_refreshed_chunk_preview(3),
 		"camera_velocity": camera_velocity,
 		"map_tile_count": 0 if map_data == null else map_data.tiles.size(),
 	}
@@ -173,6 +198,21 @@ func get_unload_queue_size() -> int:
 
 func get_loaded_chunk_count() -> int:
 	return loaded_chunks.size()
+
+
+func get_cached_chunk_count() -> int:
+	return cached_chunks.size()
+
+
+func get_loaded_chunk_preview(limit: int = 3) -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	var sorted_chunks: Array[Vector2i] = []
+	for chunk_coords in loaded_chunks.keys():
+		sorted_chunks.append(chunk_coords)
+	sorted_chunks.sort()
+	for chunk_index in range(min(max(limit, 0), sorted_chunks.size())):
+		result.append(sorted_chunks[chunk_index])
+	return result
 
 
 func get_required_chunk_count() -> int:
@@ -233,6 +273,18 @@ func get_last_unload_time_ms() -> float:
 	return last_unload_time_ms
 
 
+func get_last_loaded_chunk_preview(limit: int = 3) -> Array[Vector2i]:
+	return _get_preview_chunks(last_loaded_debug_chunks, limit)
+
+
+func get_last_unloaded_chunk_preview(limit: int = 3) -> Array[Vector2i]:
+	return _get_preview_chunks(last_unloaded_debug_chunks, limit)
+
+
+func get_last_refreshed_chunk_preview(limit: int = 3) -> Array[Vector2i]:
+	return _get_preview_chunks(last_refreshed_debug_chunks, limit)
+
+
 func get_chunk_state_count(target_state: int) -> int:
 	var count := 0
 	for state_value in chunk_states.values():
@@ -276,11 +328,94 @@ func _get_tile_size() -> Vector2:
 	return Vector2(16.0, 16.0)
 
 
+func _get_camera_visible_world_rect() -> Rect2:
+	if camera == null:
+		return Rect2(_get_camera_position(), Vector2.ZERO)
+
+	var viewport_size := get_viewport().get_visible_rect().size
+	var zoom_x := maxf(camera.zoom.x, 0.001)
+	var zoom_y := maxf(camera.zoom.y, 0.001)
+	var visible_world_size := Vector2(
+		viewport_size.x / zoom_x,
+		viewport_size.y / zoom_y
+	)
+	var half_size := visible_world_size * 0.5
+	var top_left := _get_camera_position() - half_size
+	return Rect2(top_left, visible_world_size)
+
+
+func _get_visible_cell_rect() -> Rect2i:
+	if base_layer == null:
+		return Rect2i(current_camera_cell, Vector2i.ONE)
+
+	var world_rect := _get_camera_visible_world_rect()
+	var p0 := world_rect.position
+	var p1 := world_rect.position + Vector2(world_rect.size.x, 0.0)
+	var p2 := world_rect.position + Vector2(0.0, world_rect.size.y)
+	var p3 := world_rect.position + world_rect.size
+	var c0 := base_layer.local_to_map(base_layer.to_local(p0))
+	var c1 := base_layer.local_to_map(base_layer.to_local(p1))
+	var c2 := base_layer.local_to_map(base_layer.to_local(p2))
+	var c3 := base_layer.local_to_map(base_layer.to_local(p3))
+	var min_x := mini(mini(c0.x, c1.x), mini(c2.x, c3.x))
+	var min_y := mini(mini(c0.y, c1.y), mini(c2.y, c3.y))
+	var max_x := maxi(maxi(c0.x, c1.x), maxi(c2.x, c3.x))
+	var max_y := maxi(maxi(c0.y, c1.y), maxi(c2.y, c3.y))
+	return Rect2i(
+		Vector2i(min_x, min_y),
+		Vector2i(max_x - min_x + 1, max_y - min_y + 1)
+	)
+
+
+func _cell_to_chunk_coords(cell: Vector2i) -> Vector2i:
+	return Vector2i(
+		floori(float(cell.x) / float(chunk_size)),
+		floori(float(cell.y) / float(chunk_size))
+	)
+
+
+func get_visible_chunk_rect() -> Rect2i:
+	var cell_rect := _get_visible_cell_rect()
+	var min_cell := cell_rect.position
+	var max_cell := cell_rect.position + cell_rect.size - Vector2i.ONE
+	var min_chunk := _cell_to_chunk_coords(min_cell)
+	var max_chunk := _cell_to_chunk_coords(max_cell)
+	return Rect2i(
+		min_chunk,
+		max_chunk - min_chunk + Vector2i.ONE
+	)
+
+
+func get_keep_chunk_rect() -> Rect2i:
+	var visible_chunk_rect := get_visible_chunk_rect()
+	var margin: int = max(keep_radius, 0)
+	return _expand_chunk_rect(visible_chunk_rect, margin)
+
+
+func _expand_chunk_rect(rect: Rect2i, margin: int) -> Rect2i:
+	var safe_margin: int = max(margin, 0)
+	return Rect2i(
+		rect.position - Vector2i(safe_margin, safe_margin),
+		rect.size + Vector2i(safe_margin * 2, safe_margin * 2)
+	)
+
+
+func _is_chunk_inside_rect(chunk_coords: Vector2i, rect: Rect2i) -> bool:
+	return chunk_coords.x >= rect.position.x \
+		and chunk_coords.y >= rect.position.y \
+		and chunk_coords.x < rect.position.x + rect.size.x \
+		and chunk_coords.y < rect.position.y + rect.size.y
+
+
 func _get_required_chunks() -> Dictionary:
 	var result: Dictionary = {}
-	var radius: int = max(visible_radius, 0)
-	for y in range(current_camera_chunk.y - radius, current_camera_chunk.y + radius + 1):
-		for x in range(current_camera_chunk.x - radius, current_camera_chunk.x + radius + 1):
+	var required_rect := _expand_chunk_rect(get_visible_chunk_rect(), max(preload_radius, 0))
+	var min_x := required_rect.position.x
+	var min_y := required_rect.position.y
+	var max_x := required_rect.position.x + required_rect.size.x - 1
+	var max_y := required_rect.position.y + required_rect.size.y - 1
+	for y in range(min_y, max_y + 1):
+		for x in range(min_x, max_x + 1):
 			result[Vector2i(x, y)] = true
 	return result
 
@@ -305,19 +440,25 @@ func _get_directional_preload_chunks() -> Array[Vector2i]:
 	if velocity_direction == Vector2i.ZERO:
 		return result
 
+	var required_rect := _expand_chunk_rect(get_visible_chunk_rect(), max(preload_radius, 0))
+	var min_x := required_rect.position.x
+	var min_y := required_rect.position.y
+	var max_x := required_rect.position.x + required_rect.size.x - 1
+	var max_y := required_rect.position.y + required_rect.size.y - 1
 	var seen: Dictionary = {}
 	for step in range(1, directional_preload_extra + 1):
-		var center_chunk := current_camera_chunk + velocity_direction * (visible_radius + step)
 		if velocity_direction == Vector2i.LEFT or velocity_direction == Vector2i.RIGHT:
-			for offset_y in range(-preload_radius, preload_radius + 1):
-				var preload_chunk := Vector2i(center_chunk.x, current_camera_chunk.y + offset_y)
+			var target_x := max_x + step if velocity_direction == Vector2i.RIGHT else min_x - step
+			for y in range(min_y, max_y + 1):
+				var preload_chunk := Vector2i(target_x, y)
 				if required_chunks.has(preload_chunk) or seen.has(preload_chunk):
 					continue
 				seen[preload_chunk] = true
 				result.append(preload_chunk)
 		else:
-			for offset_x in range(-preload_radius, preload_radius + 1):
-				var preload_chunk := Vector2i(current_camera_chunk.x + offset_x, center_chunk.y)
+			var target_y := max_y + step if velocity_direction == Vector2i.DOWN else min_y - step
+			for x in range(min_x, max_x + 1):
+				var preload_chunk := Vector2i(x, target_y)
 				if required_chunks.has(preload_chunk) or seen.has(preload_chunk):
 					continue
 				seen[preload_chunk] = true
@@ -346,8 +487,12 @@ func _update_required_chunks() -> void:
 
 
 func _request_chunk(chunk_coords: Vector2i) -> void:
+	_cancel_unload_if_needed(chunk_coords)
 	var current_state: int = int(chunk_states.get(chunk_coords, ChunkState.EMPTY))
 	if current_state != ChunkState.EMPTY and current_state != ChunkState.UNLOADED:
+		return
+	if enable_chunk_cache and cached_chunks.has(chunk_coords):
+		_restore_chunk_from_cache(chunk_coords)
 		return
 
 	chunk_states[chunk_coords] = ChunkState.QUEUED
@@ -355,34 +500,21 @@ func _request_chunk(chunk_coords: Vector2i) -> void:
 
 
 func _prune_stale_generation_queue() -> void:
-	var keep_chunks: Dictionary = _build_keep_chunks()
+	var keep_rect := get_keep_chunk_rect()
 	var pruned_queue: Array[Vector2i] = []
 	for chunk_coords in generation_queue:
-		if keep_chunks.has(chunk_coords):
+		if _is_chunk_inside_rect(chunk_coords, keep_rect):
 			pruned_queue.append(chunk_coords)
 			continue
 
 		var current_state: int = int(chunk_states.get(chunk_coords, ChunkState.EMPTY))
 		if current_state == ChunkState.QUEUED:
-			chunk_states[chunk_coords] = ChunkState.EMPTY
+			chunk_states[chunk_coords] = ChunkState.UNLOADED
 			continue
 
 		pruned_queue.append(chunk_coords)
 
 	generation_queue = pruned_queue
-
-
-func _build_keep_chunks() -> Dictionary:
-	var keep_chunks: Dictionary = {}
-	var radius: int = max(keep_radius, visible_radius)
-	for y in range(current_camera_chunk.y - radius, current_camera_chunk.y + radius + 1):
-		for x in range(current_camera_chunk.x - radius, current_camera_chunk.x + radius + 1):
-			keep_chunks[Vector2i(x, y)] = true
-	for chunk_coords in required_chunks.keys():
-		keep_chunks[chunk_coords] = true
-	for chunk_coords in preload_chunks.keys():
-		keep_chunks[chunk_coords] = true
-	return keep_chunks
 
 
 func _reprioritize_generation_queue() -> void:
@@ -565,6 +697,7 @@ func _process_apply_budget() -> void:
 			chunk_states[finished_chunk_coords] = ChunkState.VISIBLE
 		if bool(task.get("register_loaded_chunk_on_finish", false)):
 			loaded_chunks[finished_chunk_coords] = true
+			_append_debug_chunk(last_loaded_debug_chunks, finished_chunk_coords)
 		apply_queue.remove_at(0)
 
 	last_apply_time_ms = float(Time.get_ticks_usec() - frame_start_usec) / 1000.0
@@ -592,6 +725,7 @@ func _process_unload_budget() -> void:
 			var finished_chunk_coords: Vector2i = task.get("chunk_coords", Vector2i.ZERO)
 			chunk_states[finished_chunk_coords] = ChunkState.UNLOADED
 			unload_queue.remove_at(0)
+			_append_debug_chunk(last_unloaded_debug_chunks, finished_chunk_coords)
 			if include_transitions_runtime and transition_layer != null:
 				_enqueue_transition_refresh_task(finished_chunk_coords)
 			continue
@@ -609,11 +743,11 @@ func _process_unload_budget() -> void:
 
 
 func _request_far_chunk_unload() -> void:
-	var keep_chunks: Dictionary = _build_keep_chunks()
+	var keep_rect := get_keep_chunk_rect()
 
 	for chunk_coords in loaded_chunks.keys():
 		var current_state: int = int(chunk_states.get(chunk_coords, ChunkState.EMPTY))
-		if keep_chunks.has(chunk_coords):
+		if _is_chunk_inside_rect(chunk_coords, keep_rect):
 			continue
 		if current_state == ChunkState.VISIBLE:
 			_enqueue_unload_task(chunk_coords)
@@ -621,14 +755,14 @@ func _request_far_chunk_unload() -> void:
 	for queue_index in range(apply_queue.size() - 1, -1, -1):
 		var task: Dictionary = apply_queue[queue_index]
 		var chunk_coords: Vector2i = task.get("chunk_coords", Vector2i.ZERO)
-		if keep_chunks.has(chunk_coords):
+		if _is_chunk_inside_rect(chunk_coords, keep_rect):
 			continue
 		apply_queue.remove_at(queue_index)
 		_enqueue_unload_task(chunk_coords)
 
 	if not active_generation_task.is_empty():
 		var active_chunk_coords: Vector2i = active_generation_task.get("chunk_coords", Vector2i.ZERO)
-		if not keep_chunks.has(active_chunk_coords):
+		if not _is_chunk_inside_rect(active_chunk_coords, keep_rect):
 			active_generation_task["cancel_requested"] = true
 
 
@@ -649,6 +783,8 @@ func _enqueue_unload_task(chunk_coords: Vector2i) -> void:
 			continue
 		snapshot[cell] = tile.clone()
 
+	_store_cached_chunk_snapshot(chunk_coords, snapshot)
+
 	chunk_states[chunk_coords] = ChunkState.UNLOADING
 	loaded_chunks.erase(chunk_coords)
 	unload_queue.append({
@@ -660,11 +796,10 @@ func _enqueue_unload_task(chunk_coords: Vector2i) -> void:
 
 
 func _restore_unloading_chunks_if_needed() -> void:
-	var keep_chunks: Dictionary = _build_keep_chunks()
 	for queue_index in range(unload_queue.size() - 1, -1, -1):
 		var task: Dictionary = unload_queue[queue_index]
 		var chunk_coords: Vector2i = task.get("chunk_coords", Vector2i.ZERO)
-		if not keep_chunks.has(chunk_coords):
+		if not required_chunks.has(chunk_coords) and not preload_chunks.has(chunk_coords):
 			continue
 		_cancel_unload_task(queue_index)
 
@@ -677,7 +812,45 @@ func _cancel_unload_task(queue_index: int) -> void:
 	unload_queue.remove_at(queue_index)
 
 	var chunk_coords: Vector2i = task.get("chunk_coords", Vector2i.ZERO)
+	_touch_cached_chunk(chunk_coords)
 	var snapshot: Dictionary = task.get("snapshot", {})
+	var restore_cells: Array[Vector2i] = []
+	for cell in snapshot.keys():
+		var tile = snapshot[cell]
+		if tile == null:
+			continue
+		map_data.set_tile(cell, tile.clone())
+		restore_cells.append(cell)
+
+	restore_cells.sort()
+	var resource_cells: Array[Vector2i] = []
+	if include_resources_runtime:
+		resource_cells = restore_cells
+	var transition_cells: Array[Vector2i] = []
+	if include_transitions_runtime:
+		transition_cells = _collect_transition_refresh_cells_for_chunk(chunk_coords)
+	chunk_states[chunk_coords] = ChunkState.APPLYING
+	apply_queue.append({
+		"chunk_coords": chunk_coords,
+		"base_cells": restore_cells,
+		"resource_cells": resource_cells,
+		"transition_cells": transition_cells,
+		"base_index": 0,
+		"resource_index": 0,
+		"transition_index": 0,
+		"mark_visible_on_finish": true,
+		"register_loaded_chunk_on_finish": true,
+	})
+
+
+func _restore_chunk_from_cache(chunk_coords: Vector2i) -> void:
+	var snapshot: Dictionary = cached_chunks.get(chunk_coords, {})
+	if snapshot.is_empty():
+		chunk_states[chunk_coords] = ChunkState.QUEUED
+		generation_queue.append(chunk_coords)
+		return
+
+	_touch_cached_chunk(chunk_coords)
 	var restore_cells: Array[Vector2i] = []
 	for cell in snapshot.keys():
 		var tile = snapshot[cell]
@@ -727,6 +900,7 @@ func _enqueue_transition_refresh_task(chunk_coords: Vector2i) -> void:
 	var transition_cells: Array[Vector2i] = _collect_transition_refresh_cells_for_chunk(chunk_coords)
 	if transition_cells.is_empty():
 		return
+	_append_debug_chunk(last_refreshed_debug_chunks, chunk_coords)
 
 	apply_queue.append({
 		"chunk_coords": chunk_coords,
@@ -752,3 +926,67 @@ func _apply_runtime_resources_to_cells(cells: Array[Vector2i]) -> void:
 		if tile == null:
 			continue
 		generator.apply_runtime_resource_to_tile(tile, map_seed)
+
+
+func _cancel_unload_if_needed(chunk_coords: Vector2i) -> void:
+	var state: int = int(chunk_states.get(chunk_coords, ChunkState.EMPTY))
+	if state != ChunkState.UNLOADING:
+		return
+
+	var unload_task_index := _find_unload_task_index(chunk_coords)
+	if unload_task_index >= 0:
+		_cancel_unload_task(unload_task_index)
+		return
+
+	chunk_states[chunk_coords] = ChunkState.VISIBLE
+
+
+func _store_cached_chunk_snapshot(chunk_coords: Vector2i, snapshot: Dictionary) -> void:
+	if not enable_chunk_cache:
+		return
+	if snapshot.is_empty():
+		return
+
+	cached_chunks[chunk_coords] = snapshot
+	_touch_cached_chunk(chunk_coords)
+	_trim_cached_chunks()
+
+
+func _touch_cached_chunk(chunk_coords: Vector2i) -> void:
+	if not enable_chunk_cache:
+		return
+
+	var existing_index := cached_chunk_order.find(chunk_coords)
+	if existing_index >= 0:
+		cached_chunk_order.remove_at(existing_index)
+	cached_chunk_order.append(chunk_coords)
+
+
+func _trim_cached_chunks() -> void:
+	if not enable_chunk_cache:
+		cached_chunks.clear()
+		cached_chunk_order.clear()
+		return
+	if max_cached_chunks <= 0:
+		cached_chunks.clear()
+		cached_chunk_order.clear()
+		return
+
+	while cached_chunk_order.size() > max_cached_chunks:
+		var evict_chunk: Vector2i = cached_chunk_order[0]
+		cached_chunk_order.remove_at(0)
+		cached_chunks.erase(evict_chunk)
+
+
+func _append_debug_chunk(target: Array[Vector2i], chunk_coords: Vector2i) -> void:
+	if target.has(chunk_coords):
+		return
+	target.append(chunk_coords)
+
+
+func _get_preview_chunks(source: Array[Vector2i], limit: int) -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	var safe_limit: int = max(limit, 0)
+	for chunk_index in range(min(safe_limit, source.size())):
+		result.append(source[chunk_index])
+	return result
