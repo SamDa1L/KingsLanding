@@ -48,20 +48,31 @@ func render_base_cells(base_layer: TileMapLayer, map_data, cells: Array[Vector2i
 
 	var rendered_count := 0
 	for cell in cells:
-		base_layer.set_cell(cell, -1)
-
-		var tile = map_data.get_tile(cell)
-		if tile == null:
-			continue
-
-		var atlas_coords := TileRenderDefinitionScript.get_base_tile(tile.base_terrain)
-		if atlas_coords == TileRenderDefinitionScript.INVALID_ATLAS:
-			continue
-
-		base_layer.set_cell(cell, TileRenderDefinitionScript.TILE_SOURCE_ID, atlas_coords, 0)
-		rendered_count += 1
+		rendered_count += render_base_cell(base_layer, map_data, cell)
 
 	return rendered_count
+
+
+func render_base_cell(base_layer: TileMapLayer, map_data, cell: Vector2i) -> int:
+	if base_layer == null:
+		push_error("GeneratedMapRenderer requires a BaseLayer.")
+		return 0
+	if map_data == null:
+		push_error("GeneratedMapRenderer requires GeneratedMapData.")
+		return 0
+
+	var tile = map_data.get_tile(cell)
+	if tile == null:
+		base_layer.set_cell(cell, -1)
+		return 0
+
+	var atlas_coords := TileRenderDefinitionScript.get_base_tile(tile.base_terrain)
+	if atlas_coords == TileRenderDefinitionScript.INVALID_ATLAS:
+		base_layer.set_cell(cell, -1)
+		return 0
+
+	base_layer.set_cell(cell, TileRenderDefinitionScript.TILE_SOURCE_ID, atlas_coords, 0)
+	return 1
 
 
 func render_resource_layer(resource_layer: TileMapLayer, map_data) -> void:
@@ -105,22 +116,33 @@ func render_resource_cells(resource_layer: TileMapLayer, map_data, cells: Array[
 
 	var rendered_count := 0
 	for cell in cells:
-		resource_layer.set_cell(cell, -1)
-
-		var tile = map_data.get_tile(cell)
-		if tile == null:
-			continue
-		if tile.resource_type == &"none":
-			continue
-
-		var atlas_coords := TileRenderDefinitionScript.get_resource_tile(tile.resource_type)
-		if atlas_coords == TileRenderDefinitionScript.INVALID_ATLAS:
-			continue
-
-		resource_layer.set_cell(cell, TileRenderDefinitionScript.TILE_SOURCE_ID, atlas_coords, 0)
-		rendered_count += 1
+		rendered_count += render_resource_cell(resource_layer, map_data, cell)
 
 	return rendered_count
+
+
+func render_resource_cell(resource_layer: TileMapLayer, map_data, cell: Vector2i) -> int:
+	if resource_layer == null:
+		push_error("GeneratedMapRenderer requires a ResourceLayer.")
+		return 0
+	if map_data == null:
+		push_error("GeneratedMapRenderer requires GeneratedMapData.")
+		return 0
+
+	resource_layer.set_cell(cell, -1)
+
+	var tile = map_data.get_tile(cell)
+	if tile == null:
+		return 0
+	if tile.resource_type == &"none":
+		return 0
+
+	var atlas_coords := TileRenderDefinitionScript.get_resource_tile(tile.resource_type)
+	if atlas_coords == TileRenderDefinitionScript.INVALID_ATLAS:
+		return 0
+
+	resource_layer.set_cell(cell, TileRenderDefinitionScript.TILE_SOURCE_ID, atlas_coords, 0)
+	return 1
 
 
 func render_transition_layer(transition_layer: TileMapLayer, map_data) -> void:
@@ -149,10 +171,34 @@ func render_transition_cells(transition_layer: TileMapLayer, map_data, cells: Ar
 
 	var rendered_count := 0
 	for cell in cells:
-		if _render_transition_cell(transition_layer, map_data, cell):
-			rendered_count += 1
+		rendered_count += render_transition_cell(transition_layer, map_data, cell)
 
 	return rendered_count
+
+
+func render_transition_cell(transition_layer: TileMapLayer, map_data, cell: Vector2i) -> int:
+	if transition_layer == null:
+		push_error("GeneratedMapRenderer requires a TransitionLayer.")
+		return 0
+	if map_data == null:
+		push_error("GeneratedMapRenderer requires GeneratedMapData.")
+		return 0
+
+	return 1 if _render_transition_cell(transition_layer, map_data, cell) else 0
+
+
+func clear_cell_from_layers(
+	cell: Vector2i,
+	base_layer: TileMapLayer = null,
+	resource_layer: TileMapLayer = null,
+	transition_layer: TileMapLayer = null
+) -> void:
+	if base_layer != null:
+		base_layer.set_cell(cell, -1)
+	if resource_layer != null:
+		resource_layer.set_cell(cell, -1)
+	if transition_layer != null:
+		transition_layer.set_cell(cell, -1)
 
 
 func refresh_chunk_transition_edges(transition_layer: TileMapLayer, map_data, chunk_coords: Vector2i) -> int:

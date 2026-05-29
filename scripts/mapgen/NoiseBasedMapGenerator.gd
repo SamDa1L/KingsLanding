@@ -77,6 +77,12 @@ func generate_tile(map_seed: int, cell: Vector2i):
 	return tile
 
 
+func apply_runtime_resource_to_tile(tile, map_seed: int) -> void:
+	if resource_patch_generator == null or tile == null:
+		return
+	resource_patch_generator.apply_runtime_resource_to_tile(tile, map_seed)
+
+
 func setup_noise(map_seed: int) -> void:
 	height_noise.seed = map_seed + 100
 	height_noise.noise_type = FastNoiseLite.TYPE_PERLIN

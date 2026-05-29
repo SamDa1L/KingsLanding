@@ -6,6 +6,7 @@ const GeneratedMapDataScript := preload("res://scripts/mapgen/GeneratedMapData.g
 const NoiseBasedMapGeneratorScript := preload("res://scripts/mapgen/NoiseBasedMapGenerator.gd")
 
 const DEFAULT_ACTIVE_RADIUS := 1
+const RUNTIME_INCLUDE_RESOURCES := false
 
 var map_seed: int = 0
 var chunk_size: int = 32
@@ -135,7 +136,12 @@ func _generate_chunk_tiles(chunk_coords: Vector2i) -> Dictionary:
 		return result
 
 	var single_chunk_list: Array[Vector2i] = [chunk_coords]
-	var generated_chunk_map = generator.generate_chunk_map(map_seed, single_chunk_list, chunk_size, true)
+	var generated_chunk_map = generator.generate_chunk_map(
+		map_seed,
+		single_chunk_list,
+		chunk_size,
+		RUNTIME_INCLUDE_RESOURCES
+	)
 	for cell in generated_chunk_map.get_all_cells():
 		var tile = generated_chunk_map.get_tile(cell)
 		if tile == null:

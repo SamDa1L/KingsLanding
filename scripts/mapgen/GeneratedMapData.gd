@@ -38,6 +38,10 @@ func setup(map_seed: int, map_width: int, map_height: int, map_chunk_size: int =
 	generated_chunks.clear()
 
 
+func setup_sparse(map_seed: int, map_chunk_size: int = 32) -> void:
+	setup(map_seed, 0, 0, map_chunk_size, Vector2i.ZERO)
+
+
 func is_inside(cell: Vector2i) -> bool:
 	if _is_sparse_mode():
 		return true
@@ -214,6 +218,20 @@ func get_adjacent_chunk_edge_refresh_cells(chunk_coords: Vector2i) -> Array[Vect
 		for cell in get_chunk_edge_refresh_cells(neighbor_chunk_coords):
 			refresh_cells[cell] = true
 	for cell in get_chunk_edge_refresh_cells(chunk_coords):
+		refresh_cells[cell] = true
+
+	var result: Array[Vector2i] = []
+	for refresh_cell in refresh_cells.keys():
+		result.append(refresh_cell)
+	result.sort()
+	return result
+
+
+func get_transition_refresh_cells_for_chunk(chunk_coords: Vector2i) -> Array[Vector2i]:
+	var refresh_cells: Dictionary = {}
+	for cell in get_chunk_cells(chunk_coords):
+		refresh_cells[cell] = true
+	for cell in get_adjacent_chunk_edge_refresh_cells(chunk_coords):
 		refresh_cells[cell] = true
 
 	var result: Array[Vector2i] = []

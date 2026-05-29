@@ -18,6 +18,8 @@ const CARDINAL_DIRECTIONS: Array[Vector2i] = [
 
 var _wood_noise: FastNoiseLite
 var _stone_noise: FastNoiseLite
+var _configured_seed: int = 0
+var _is_configured: bool = false
 
 
 func _init() -> void:
@@ -28,7 +30,7 @@ func apply_resource_patches(map_data, map_seed: int) -> Dictionary:
 	if map_data == null:
 		return _empty_summary()
 
-	_configure_noise(map_seed)
+	_ensure_configured(map_seed)
 	_clear_existing_resources(map_data)
 
 	var summary := {
@@ -82,6 +84,28 @@ func apply_resource_patches(map_data, map_seed: int) -> Dictionary:
 	return summary
 
 
+func sample_resource_for_cell(cell: Vector2i, map_seed: int, base_terrain: StringName) -> StringName:
+	_ensure_configured(map_seed)
+	if base_terrain != GeneratedTileDataScript.TERRAIN_PLAIN and base_terrain != GeneratedTileDataScript.TERRAIN_SAND:
+		return GeneratedTileDataScript.RESOURCE_NONE
+	return _sample_resource_type(cell, map_seed)
+
+
+func apply_runtime_resource_to_tile(tile, map_seed: int) -> void:
+	if tile == null:
+		return
+	if not _can_host_resource(tile):
+		tile.clear_resource()
+		return
+
+	var resource_type := sample_resource_for_cell(tile.cell, map_seed, tile.base_terrain)
+	if resource_type == GeneratedTileDataScript.RESOURCE_NONE:
+		tile.clear_resource()
+		return
+
+	tile.set_resource(resource_type, -1, 1.0)
+
+
 func _empty_summary() -> Dictionary:
 	return {
 		GeneratedTileDataScript.RESOURCE_WOOD: {
@@ -114,6 +138,14 @@ func _setup_noise() -> void:
 func _configure_noise(map_seed: int) -> void:
 	_wood_noise.seed = map_seed + 1000
 	_stone_noise.seed = map_seed + 2000
+	_configured_seed = map_seed
+	_is_configured = true
+
+
+func _ensure_configured(map_seed: int) -> void:
+	if _is_configured and _configured_seed == map_seed:
+		return
+	_configure_noise(map_seed)
 
 
 func _clear_existing_resources(map_data) -> void:
