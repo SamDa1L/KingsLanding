@@ -48,4 +48,10 @@ func _to_legacy_terrain(tile) -> int:
 	if tile.resource_type == GeneratedTileDataScript.RESOURCE_STONE:
 		return MapTypes.TerrainType.STONE
 
-	return MapTypes.TerrainType.PLAIN
+	if tile.base_terrain == GeneratedTileDataScript.TERRAIN_PLAIN:
+		return MapTypes.TerrainType.PLAIN
+
+	if bool(tile.buildable):
+		return MapTypes.TerrainType.EMPTY
+
+	return MapTypes.TerrainType.WATER

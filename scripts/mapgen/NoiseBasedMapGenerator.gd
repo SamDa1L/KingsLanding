@@ -35,22 +35,46 @@ func generate_map(map_seed: int, map_width: int = DEFAULT_WIDTH, map_height: int
 	for y in range(generated_map.height):
 		for x in range(generated_map.width):
 			var cell := Vector2i(x, y)
-			var world_pos := _cell_to_world_position(cell, generated_map.width, generated_map.height)
-			var tile = GeneratedTileDataScript.new()
-			tile.setup(cell, GeneratedTileDataScript.TERRAIN_PLAIN)
-
-			var height_value := _sample_height(world_pos)
-			var moisture_value := _sample_moisture(world_pos)
-			var temperature_value := _sample_temperature(world_pos)
-
-			tile.set_noise_values(height_value, moisture_value, temperature_value)
-			_apply_base_terrain(tile, height_value)
+			var tile = generate_tile(map_seed, cell)
 			generated_map.set_tile(cell, tile)
 
 	if resource_patch_generator != null:
 		resource_patch_generator.apply_resource_patches(generated_map, map_seed)
 
 	return generated_map
+
+
+func generate_chunk_map(map_seed: int, chunk_coords_list: Array[Vector2i], map_chunk_size: int = DEFAULT_CHUNK_SIZE, include_resources: bool = false):
+	setup_noise(map_seed)
+
+	var generated_map = GeneratedMapDataScript.new()
+	var bounds := _get_chunk_bounds(chunk_coords_list, map_chunk_size)
+	generated_map.setup(map_seed, int(bounds.size.x), int(bounds.size.y), map_chunk_size, bounds.origin)
+
+	for chunk_coords in chunk_coords_list:
+		_generate_chunk_into_map(generated_map, map_seed, chunk_coords, bounds.origin)
+
+	if include_resources and resource_patch_generator != null:
+		resource_patch_generator.apply_resource_patches(generated_map, map_seed)
+
+	return generated_map
+
+
+func generate_tile(map_seed: int, cell: Vector2i):
+	if height_noise == null:
+		setup_noise(map_seed)
+
+	var world_pos := _cell_to_world_position(cell)
+	var tile = GeneratedTileDataScript.new()
+	tile.setup(cell, GeneratedTileDataScript.TERRAIN_PLAIN)
+
+	var height_value := _sample_height(world_pos)
+	var moisture_value := _sample_moisture(world_pos)
+	var temperature_value := _sample_temperature(world_pos)
+
+	tile.set_noise_values(height_value, moisture_value, temperature_value)
+	_apply_base_terrain(tile, height_value)
+	return tile
 
 
 func setup_noise(map_seed: int) -> void:
@@ -90,10 +114,8 @@ func _setup_noise_objects() -> void:
 	detail_noise = FastNoiseLite.new()
 
 
-func _cell_to_world_position(cell: Vector2i, map_width: int, map_height: int) -> Vector2:
-	var centered_x := float(cell.x) - float(map_width) * 0.5
-	var centered_y := float(cell.y) - float(map_height) * 0.5
-	return Vector2(centered_x, centered_y)
+func _cell_to_world_position(cell: Vector2i) -> Vector2:
+	return Vector2(float(cell.x), float(cell.y))
 
 
 func _sample_height(world_pos: Vector2) -> float:
@@ -127,3 +149,46 @@ func _apply_base_terrain(tile, height_value: float) -> void:
 		return
 
 	tile.set_base_terrain(GeneratedTileDataScript.TERRAIN_PLAIN, true, true)
+
+
+func _generate_chunk_into_map(generated_map, map_seed: int, chunk_coords: Vector2i, origin_offset: Vector2i = Vector2i.ZERO) -> void:
+	if generated_map == null:
+		return
+
+	var world_origin: Vector2i = chunk_coords * generated_map.chunk_size
+	for local_y in range(generated_map.chunk_size):
+		for local_x in range(generated_map.chunk_size):
+			var world_cell := world_origin + Vector2i(local_x, local_y)
+			var map_cell := world_cell - origin_offset
+			if not generated_map.is_inside(map_cell):
+				continue
+
+			var tile = generate_tile(map_seed, world_cell)
+			tile.cell = map_cell
+			generated_map.set_tile(map_cell, tile)
+
+
+func _get_chunk_bounds(chunk_coords_list: Array[Vector2i], map_chunk_size: int) -> Dictionary:
+	if chunk_coords_list.is_empty():
+		return {
+			"origin": Vector2i.ZERO,
+			"size": Vector2i.ZERO,
+		}
+
+	var min_chunk := chunk_coords_list[0]
+	var max_chunk := chunk_coords_list[0]
+
+	for chunk_coords in chunk_coords_list:
+		min_chunk.x = min(min_chunk.x, chunk_coords.x)
+		min_chunk.y = min(min_chunk.y, chunk_coords.y)
+		max_chunk.x = max(max_chunk.x, chunk_coords.x)
+		max_chunk.y = max(max_chunk.y, chunk_coords.y)
+
+	var origin := min_chunk * map_chunk_size
+	var chunk_count := (max_chunk - min_chunk) + Vector2i.ONE
+	var size := chunk_count * map_chunk_size
+
+	return {
+		"origin": origin,
+		"size": size,
+	}

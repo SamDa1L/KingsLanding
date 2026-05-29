@@ -80,6 +80,21 @@ func has_resource() -> bool:
 	return resource_type != RESOURCE_NONE
 
 
+func clone() -> RefCounted:
+	var copy := GeneratedTileData.new()
+	copy.cell = cell
+	copy.base_terrain = base_terrain
+	copy.resource_type = resource_type
+	copy.resource_patch_id = resource_patch_id
+	copy.buildable = buildable
+	copy.passable = passable
+	copy.height_value = height_value
+	copy.moisture_value = moisture_value
+	copy.temperature_value = temperature_value
+	copy.resource_value = resource_value
+	return copy
+
+
 func to_dictionary() -> Dictionary:
 	return {
 		"cell": cell,
