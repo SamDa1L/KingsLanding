@@ -32,7 +32,7 @@ const PLACEMENT_VALID_COLOR := Color(0.2, 0.95, 0.3, 0.42)
 const PLACEMENT_INVALID_COLOR := Color(1.0, 0.18, 0.12, 0.42)
 const HOUSE_POPULATION_CAPACITY := 5
 const IDLE_VILLAGER_WANDER_RADIUS := 96.0
-const CAMERA_MIN_ZOOM := 1.0
+const CAMERA_MIN_ZOOM := 0.5
 const CAMERA_MAX_ZOOM := 2.0
 const CAMERA_ZOOM_STEP := 0.125
 const GAME_WORLD_VIEWPORT_RIGHT := 922.0
@@ -42,6 +42,8 @@ const HAPPINESS_PANEL_HEIGHT := 84.0
 const PLACEMENT_PANEL_HEIGHT := 372.0
 const WORKER_POPUP_MARGIN := 8.0
 const WORKER_POPUP_Y_OFFSET := 12.0
+
+@export var enable_console_debug_logs: bool = false
 
 @onready var ground_layer: TileMapLayer = $MapRoot/GroundLayer
 @onready var resource_layer: TileMapLayer = $MapRoot/ResourceLayer
@@ -741,12 +743,13 @@ func _spawn_villager_route(index: int, home_position: Vector2, work_position: Ve
 	villager.call("setup_route", home_position, work_position, float(index) * VILLAGER_START_DELAY_STEP)
 	villager_states[villager] = villager.call("get_state_name")
 	villager_assignments[villager] = work_building
-	print(
-		"stage6 villager route | name=", villager.name,
-		" work=", MapTypes.get_building_label(int(work_building.building_type)),
-		" home=", home_position,
-		" work_pos=", work_position
-	)
+	if enable_console_debug_logs:
+		print(
+			"stage6 villager route | name=", villager.name,
+			" work=", MapTypes.get_building_label(int(work_building.building_type)),
+			" home=", home_position,
+			" work_pos=", work_position
+		)
 
 
 func _spawn_idle_villager(index: int, anchor_position: Vector2, wander_bounds: Rect2) -> void:
@@ -1231,7 +1234,8 @@ func _enter_placement_mode(building_type: int) -> void:
 	placement_mode_active = true
 	selected_building_type = building_type
 	last_placement_message = "已选择：%s，请移动鼠标预览放置位置。" % MapTypes.get_building_label(selected_building_type)
-	print("stage7 placement mode | selected=", MapTypes.get_building_label(selected_building_type))
+	if enable_console_debug_logs:
+		print("stage7 placement mode | selected=", MapTypes.get_building_label(selected_building_type))
 	_update_worker_control_ui()
 	_update_placement_hover(true)
 
@@ -1246,7 +1250,8 @@ func _exit_placement_mode() -> void:
 	last_placement_message = "已退出放置模式。"
 	_update_placement_overlay()
 	_update_worker_control_ui()
-	print("stage7 placement mode | exited")
+	if enable_console_debug_logs:
+		print("stage7 placement mode | exited")
 
 
 func _update_placement_hover(force_update: bool = false) -> void:
@@ -1285,7 +1290,8 @@ func _try_place_selected_building() -> void:
 	if not bool(hovered_result.can_place):
 		last_placement_message = "放置失败：%s" % str(hovered_result.reason)
 		_append_event_log("无法放置 %s：%s" % [MapTypes.get_building_label(selected_building_type), str(hovered_result.reason)])
-		print("stage7 placement blocked | building=", MapTypes.get_building_label(selected_building_type), " cell=", hovered_cell, " reason=", hovered_result.reason)
+		if enable_console_debug_logs:
+			print("stage7 placement blocked | building=", MapTypes.get_building_label(selected_building_type), " cell=", hovered_cell, " reason=", hovered_result.reason)
 		_update_placement_overlay()
 		return
 
@@ -1298,7 +1304,8 @@ func _try_place_selected_building() -> void:
 	if placed_building.has_method("is_valid") and not bool(placed_building.can_place):
 		last_placement_message = "放置失败：%s" % str(placed_building.reason)
 		_append_event_log("无法放置 %s：%s" % [MapTypes.get_building_label(selected_building_type), str(placed_building.reason)])
-		print("stage7 placement blocked | building=", MapTypes.get_building_label(selected_building_type), " cell=", hovered_cell, " reason=", placed_building.reason)
+		if enable_console_debug_logs:
+			print("stage7 placement blocked | building=", MapTypes.get_building_label(selected_building_type), " cell=", hovered_cell, " reason=", placed_building.reason)
 		_update_placement_overlay()
 		return
 
@@ -1307,7 +1314,8 @@ func _try_place_selected_building() -> void:
 	_instantiate_building_visual(placed_building)
 	last_placement_message = "建造完成：%s，位置 %s" % [placed_building.get_building_label(), str(placed_building.position)]
 	_append_event_log(last_placement_message)
-	print("stage7 placement success | building=", placed_building.get_building_label(), " cell=", placed_building.position)
+	if enable_console_debug_logs:
+		print("stage7 placement success | building=", placed_building.get_building_label(), " cell=", placed_building.position)
 	_sync_household_count()
 	if int(placed_building.building_type) == MapTypes.BuildingType.HOUSE and governance_state != null:
 		governance_state.set_population(int(governance_state.population) + HOUSE_POPULATION_CAPACITY)
@@ -2375,6 +2383,11 @@ func _get_building_node_name(building: RefCounted) -> String:
 
 
 func _print_initial_building_summary(spawner: RefCounted) -> void:
+	if not enable_console_debug_logs:
+		for warning in spawner.last_spawn_warnings:
+			push_warning("stage4 initial building skipped: %s" % warning)
+		return
+
 	var counts := _count_buildings(initial_buildings)
 	print(
 		"stage4 initial buildings | total=", initial_buildings.size(),
@@ -2396,6 +2409,9 @@ func _print_initial_building_summary(spawner: RefCounted) -> void:
 
 
 func _print_villager_summary() -> void:
+	if not enable_console_debug_logs:
+		return
+
 	var idle_count := 0
 	var moving_count := 0
 	var working_count := 0
@@ -2424,6 +2440,9 @@ func _count_buildings(buildings: Array) -> Dictionary:
 
 
 func _print_map_summary(read_result: Dictionary, regions: Dictionary, scanner: RefCounted) -> void:
+	if not enable_console_debug_logs:
+		return
+
 	var counts: Dictionary = read_result["terrain_counts"]
 	var used_rect: Rect2i = read_result["used_rect"]
 	var decor_cells := decor_layer.get_used_cells().size()
@@ -2463,6 +2482,9 @@ func _print_map_summary(read_result: Dictionary, regions: Dictionary, scanner: R
 
 
 func _print_region_details(label: String, regions: Array) -> void:
+	if not enable_console_debug_logs:
+		return
+
 	for region in regions:
 		print(
 			label,
@@ -2490,7 +2512,8 @@ func _on_villager_state_changed(villager: Node2D, state_name: StringName) -> voi
 		_update_worker_control_ui()
 		_update_economy_ui()
 		_refresh_stage14_hud()
-	print("stage6 villager state | name=", villager.name, " state=", state_name)
+	if enable_console_debug_logs:
+		print("stage6 villager state | name=", villager.name, " state=", state_name)
 
 
 func _update_worker_control_ui() -> void:

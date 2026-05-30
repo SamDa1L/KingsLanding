@@ -31,12 +31,15 @@ enum ChunkState {
 @export var include_transitions_runtime: bool = false
 
 var map_data: RefCounted
+var source_map_data: RefCounted = null
 var generator: RefCounted
 var renderer: GeneratedMapRenderer
 var base_layer: TileMapLayer
 var resource_layer: TileMapLayer
 var transition_layer: TileMapLayer
 var camera: Camera2D
+var _runtime_uses_source_map: bool = false
+var _runtime_allow_source_map_fallback_generation: bool = false
 
 var chunk_states: Dictionary = {}
 var generation_queue: Array[Vector2i] = []
@@ -90,7 +93,8 @@ func setup_runtime(
 	next_base_layer: TileMapLayer = null,
 	next_resource_layer: TileMapLayer = null,
 	next_transition_layer: TileMapLayer = null,
-	next_camera: Camera2D = null
+	next_camera: Camera2D = null,
+	next_source_map_data: RefCounted = null
 ) -> void:
 	map_seed = next_seed
 	generator = next_generator
@@ -99,6 +103,11 @@ func setup_runtime(
 	resource_layer = next_resource_layer
 	transition_layer = next_transition_layer
 	camera = next_camera
+	source_map_data = next_source_map_data
+	_runtime_uses_source_map = source_map_data != null
+	_runtime_allow_source_map_fallback_generation = _runtime_uses_source_map
+	if _runtime_uses_source_map and source_map_data != null and int(source_map_data.chunk_size) > 0:
+		chunk_size = max(int(source_map_data.chunk_size), 1)
 
 	map_data = GeneratedMapDataScript.new()
 	map_data.setup_sparse(map_seed, chunk_size)
@@ -172,6 +181,19 @@ func get_debug_snapshot() -> Dictionary:
 	}
 
 
+func flush_pending_runtime_tasks(max_iterations: int = 16) -> void:
+	if not is_runtime_initialized:
+		return
+
+	var safe_iterations: int = max(max_iterations, 0)
+	for _iteration in range(safe_iterations):
+		if generation_queue.is_empty() and active_generation_task.is_empty() and apply_queue.is_empty() and unload_queue.is_empty():
+			break
+		_process_generation_budget()
+		_process_apply_budget()
+		_process_unload_budget()
+
+
 func get_process_frame_count() -> int:
 	return process_frame_count
 
@@ -194,6 +216,19 @@ func get_apply_queue_size() -> int:
 
 func get_unload_queue_size() -> int:
 	return unload_queue.size()
+
+
+func _get_task_vector2i_array(task: Dictionary, key: String) -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	var raw_value: Variant = task.get(key, [])
+	if not (raw_value is Array):
+		return result
+
+	var raw_array: Array = raw_value
+	for item in raw_array:
+		if item is Vector2i:
+			result.append(item)
+	return result
 
 
 func get_loaded_chunk_count() -> int:
@@ -487,6 +522,9 @@ func _update_required_chunks() -> void:
 
 
 func _request_chunk(chunk_coords: Vector2i) -> void:
+	var chunk_overlaps_source_map := _chunk_overlaps_source_map(chunk_coords)
+	if _runtime_uses_source_map and not chunk_overlaps_source_map and not _runtime_allow_source_map_fallback_generation:
+		return
 	_cancel_unload_if_needed(chunk_coords)
 	var current_state: int = int(chunk_states.get(chunk_coords, ChunkState.EMPTY))
 	if current_state != ChunkState.EMPTY and current_state != ChunkState.UNLOADED:
@@ -541,7 +579,9 @@ func _reprioritize_generation_queue() -> void:
 func _process_generation_budget() -> void:
 	generated_cells_this_frame = 0
 	last_generation_time_ms = 0.0
-	if generator == null or map_data == null:
+	if map_data == null:
+		return
+	if not _runtime_uses_source_map and generator == null:
 		return
 
 	var frame_start_usec: int = Time.get_ticks_usec()
@@ -559,7 +599,7 @@ func _process_generation_budget() -> void:
 			_cancel_active_generation_task()
 			continue
 
-		var task_cells: Array[Vector2i] = active_generation_task.get("cells", [])
+		var task_cells: Array[Vector2i] = _get_task_vector2i_array(active_generation_task, "cells")
 		var next_local_index: int = int(active_generation_task.get("next_local_index", 0))
 		if next_local_index >= task_cells.size():
 			_finish_generation_task(active_generation_task)
@@ -567,9 +607,25 @@ func _process_generation_budget() -> void:
 			continue
 
 		var world_cell: Vector2i = task_cells[next_local_index]
-		var tile = generator.generate_tile(map_seed, world_cell)
-		if tile != null:
-			map_data.set_tile(world_cell, tile)
+		if _runtime_uses_source_map:
+			var source_cell := _source_world_cell_to_local_cell(world_cell)
+			var source_tile = null
+			if _is_source_world_cell_inside(world_cell):
+				source_tile = source_map_data.get_tile(source_cell)
+			if source_tile != null:
+				map_data.set_tile(world_cell, source_tile.clone())
+			elif generator != null and generator.has_method("generate_tile"):
+				var fallback_tile = generator.generate_tile(map_seed, world_cell)
+				if fallback_tile != null:
+					if include_resources_runtime and generator.has_method("apply_runtime_resource_to_tile"):
+						generator.apply_runtime_resource_to_tile(fallback_tile, map_seed)
+					map_data.set_tile(world_cell, fallback_tile)
+		else:
+			var tile = generator.generate_tile(map_seed, world_cell)
+			if tile != null:
+				if include_resources_runtime and generator.has_method("apply_runtime_resource_to_tile"):
+					generator.apply_runtime_resource_to_tile(tile, map_seed)
+				map_data.set_tile(world_cell, tile)
 
 		active_generation_task["next_local_index"] = next_local_index + 1
 		generated_cells_this_frame += 1
@@ -603,11 +659,12 @@ func _finish_generation_task(task: Dictionary) -> void:
 		return
 
 	var chunk_coords: Vector2i = task.get("chunk_coords", Vector2i.ZERO)
-	var base_cells: Array[Vector2i] = task.get("cells", [])
+	var base_cells: Array[Vector2i] = _get_task_vector2i_array(task, "cells")
 	var resource_cells: Array[Vector2i] = []
 	if include_resources_runtime:
 		resource_cells = base_cells
-		_apply_runtime_resources_to_cells(base_cells)
+		if not _runtime_uses_source_map:
+			_apply_runtime_resources_to_cells(base_cells)
 	var transition_cells: Array[Vector2i] = []
 	if include_transitions_runtime:
 		transition_cells = _collect_transition_refresh_cells_for_chunk(chunk_coords)
@@ -629,7 +686,7 @@ func _cancel_active_generation_task() -> void:
 	if active_generation_task.is_empty():
 		return
 
-	var task_cells: Array[Vector2i] = active_generation_task.get("cells", [])
+	var task_cells: Array[Vector2i] = _get_task_vector2i_array(active_generation_task, "cells")
 	var generated_count: int = int(active_generation_task.get("next_local_index", 0))
 	var chunk_coords: Vector2i = active_generation_task.get("chunk_coords", Vector2i.ZERO)
 	for cell_index in range(min(generated_count, task_cells.size())):
@@ -644,7 +701,8 @@ func _get_world_cells_for_chunk(chunk_coords: Vector2i) -> Array[Vector2i]:
 	var chunk_origin: Vector2i = chunk_coords * chunk_size
 	for local_y in range(chunk_size):
 		for local_x in range(chunk_size):
-			result.append(chunk_origin + Vector2i(local_x, local_y))
+			var world_cell := chunk_origin + Vector2i(local_x, local_y)
+			result.append(world_cell)
 	return result
 
 
@@ -664,7 +722,7 @@ func _process_apply_budget() -> void:
 
 	while tile_writes_this_frame < budget and not apply_queue.is_empty():
 		var task: Dictionary = apply_queue[0]
-		var base_cells: Array[Vector2i] = task.get("base_cells", [])
+		var base_cells: Array[Vector2i] = _get_task_vector2i_array(task, "base_cells")
 		var base_index: int = int(task.get("base_index", 0))
 		if base_index < base_cells.size():
 			var base_cell: Vector2i = base_cells[base_index]
@@ -673,7 +731,7 @@ func _process_apply_budget() -> void:
 			apply_queue[0] = task
 			continue
 
-		var resource_cells: Array[Vector2i] = task.get("resource_cells", [])
+		var resource_cells: Array[Vector2i] = _get_task_vector2i_array(task, "resource_cells")
 		var resource_index: int = int(task.get("resource_index", 0))
 		if include_resources_runtime and resource_layer != null and resource_index < resource_cells.size():
 			var resource_cell: Vector2i = resource_cells[resource_index]
@@ -682,7 +740,7 @@ func _process_apply_budget() -> void:
 			apply_queue[0] = task
 			continue
 
-		var transition_cells: Array[Vector2i] = task.get("transition_cells", [])
+		var transition_cells: Array[Vector2i] = _get_task_vector2i_array(task, "transition_cells")
 		var transition_index: int = int(task.get("transition_index", 0))
 		if include_transitions_runtime and transition_layer != null and transition_index < transition_cells.size():
 			var transition_cell: Vector2i = transition_cells[transition_index]
@@ -719,7 +777,7 @@ func _process_unload_budget() -> void:
 
 	while unloaded_cells_this_frame < budget and not unload_queue.is_empty():
 		var task: Dictionary = unload_queue[0]
-		var cells: Array[Vector2i] = task.get("cells", [])
+		var cells: Array[Vector2i] = _get_task_vector2i_array(task, "cells")
 		var next_index: int = int(task.get("next_index", 0))
 		if next_index >= cells.size():
 			var finished_chunk_coords: Vector2i = task.get("chunk_coords", Vector2i.ZERO)
@@ -894,6 +952,41 @@ func _collect_transition_refresh_cells_for_chunk(chunk_coords: Vector2i) -> Arra
 	if not map_data.has_method("get_transition_refresh_cells_for_chunk"):
 		return []
 	return map_data.get_transition_refresh_cells_for_chunk(chunk_coords)
+
+
+func _chunk_overlaps_source_map(chunk_coords: Vector2i) -> bool:
+	if not _runtime_uses_source_map or source_map_data == null:
+		return true
+	if int(source_map_data.width) <= 0 or int(source_map_data.height) <= 0:
+		return true
+
+	var source_origin: Vector2i = source_map_data.world_origin
+	var source_end: Vector2i = source_origin + Vector2i(int(source_map_data.width), int(source_map_data.height))
+	var chunk_origin: Vector2i = chunk_coords * chunk_size
+	var chunk_end: Vector2i = chunk_origin + Vector2i(chunk_size, chunk_size)
+
+	return chunk_origin.x < source_end.x \
+		and chunk_end.x > source_origin.x \
+		and chunk_origin.y < source_end.y \
+		and chunk_end.y > source_origin.y
+
+
+func _source_world_cell_to_local_cell(world_cell: Vector2i) -> Vector2i:
+	if source_map_data == null:
+		return world_cell
+	if int(source_map_data.width) <= 0 or int(source_map_data.height) <= 0:
+		return world_cell
+	return world_cell - source_map_data.world_origin
+
+
+func _is_source_world_cell_inside(world_cell: Vector2i) -> bool:
+	if source_map_data == null:
+		return false
+	if int(source_map_data.width) <= 0 or int(source_map_data.height) <= 0:
+		return true
+
+	var local_cell := _source_world_cell_to_local_cell(world_cell)
+	return source_map_data.is_inside(local_cell)
 
 
 func _enqueue_transition_refresh_task(chunk_coords: Vector2i) -> void:
