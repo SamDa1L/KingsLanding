@@ -66,6 +66,7 @@ var last_unload_time_ms: float = 0.0
 var last_loaded_debug_chunks: Array[Vector2i] = []
 var last_unloaded_debug_chunks: Array[Vector2i] = []
 var last_refreshed_debug_chunks: Array[Vector2i] = []
+var visible_chunks: Dictionary = {}
 
 
 func _ready() -> void:
@@ -134,6 +135,7 @@ func setup_runtime(
 	last_loaded_debug_chunks.clear()
 	last_unloaded_debug_chunks.clear()
 	last_refreshed_debug_chunks.clear()
+	visible_chunks.clear()
 	last_camera_position = _get_camera_position()
 	is_runtime_initialized = true
 	_update_camera_snapshot(1.0)
@@ -194,6 +196,29 @@ func flush_pending_runtime_tasks(max_iterations: int = 16) -> void:
 		_process_unload_budget()
 
 
+func flush_until_visible_base_ready(max_iterations: int = 64) -> void:
+	if not is_runtime_initialized:
+		return
+
+	var safe_iterations: int = max(max_iterations, 0)
+	for _iteration in range(safe_iterations):
+		_update_required_chunks()
+		if is_visible_base_ready():
+			break
+		_process_generation_budget()
+		_process_apply_budget()
+		_process_unload_budget()
+
+
+func is_visible_base_ready() -> bool:
+	var visible_rect := get_visible_chunk_rect()
+	for y in range(visible_rect.position.y, visible_rect.position.y + visible_rect.size.y):
+		for x in range(visible_rect.position.x, visible_rect.position.x + visible_rect.size.x):
+			if not _is_chunk_base_ready(Vector2i(x, y)):
+				return false
+	return true
+
+
 func get_process_frame_count() -> int:
 	return process_frame_count
 
@@ -216,19 +241,6 @@ func get_apply_queue_size() -> int:
 
 func get_unload_queue_size() -> int:
 	return unload_queue.size()
-
-
-func _get_task_vector2i_array(task: Dictionary, key: String) -> Array[Vector2i]:
-	var result: Array[Vector2i] = []
-	var raw_value: Variant = task.get(key, [])
-	if not (raw_value is Array):
-		return result
-
-	var raw_array: Array = raw_value
-	for item in raw_array:
-		if item is Vector2i:
-			result.append(item)
-	return result
 
 
 func get_loaded_chunk_count() -> int:
@@ -367,7 +379,8 @@ func _get_camera_visible_world_rect() -> Rect2:
 	if camera == null:
 		return Rect2(_get_camera_position(), Vector2.ZERO)
 
-	var viewport_size := get_viewport().get_visible_rect().size
+	var viewport_rect := get_viewport().get_visible_rect()
+	var viewport_size := viewport_rect.size
 	var zoom_x := maxf(camera.zoom.x, 0.001)
 	var zoom_y := maxf(camera.zoom.y, 0.001)
 	var visible_world_size := Vector2(
@@ -375,8 +388,8 @@ func _get_camera_visible_world_rect() -> Rect2:
 		viewport_size.y / zoom_y
 	)
 	var half_size := visible_world_size * 0.5
-	var top_left := _get_camera_position() - half_size
-	return Rect2(top_left, visible_world_size)
+	var world_top_left := _get_camera_position() - half_size
+	return Rect2(world_top_left, visible_world_size)
 
 
 func _get_visible_cell_rect() -> Rect2i:
@@ -455,6 +468,18 @@ func _get_required_chunks() -> Dictionary:
 	return result
 
 
+func _get_chunks_in_rect(rect: Rect2i) -> Dictionary:
+	var result: Dictionary = {}
+	var min_x := rect.position.x
+	var min_y := rect.position.y
+	var max_x := rect.position.x + rect.size.x - 1
+	var max_y := rect.position.y + rect.size.y - 1
+	for y in range(min_y, max_y + 1):
+		for x in range(min_x, max_x + 1):
+			result[Vector2i(x, y)] = true
+	return result
+
+
 func _get_directional_preload_chunks() -> Array[Vector2i]:
 	var result: Array[Vector2i] = []
 	if directional_preload_extra <= 0:
@@ -503,6 +528,7 @@ func _get_directional_preload_chunks() -> Array[Vector2i]:
 
 
 func _update_required_chunks() -> void:
+	visible_chunks = _get_chunks_in_rect(get_visible_chunk_rect())
 	required_chunks = _get_required_chunks()
 	preload_chunks.clear()
 
@@ -559,19 +585,23 @@ func _reprioritize_generation_queue() -> void:
 	if generation_queue.size() <= 1:
 		return
 
+	var visible_list: Array[Vector2i] = []
 	var required_list: Array[Vector2i] = []
 	var preload_list: Array[Vector2i] = []
 	var other_list: Array[Vector2i] = []
 
 	for chunk_coords in generation_queue:
-		if required_chunks.has(chunk_coords):
+		if visible_chunks.has(chunk_coords):
+			visible_list.append(chunk_coords)
+		elif required_chunks.has(chunk_coords):
 			required_list.append(chunk_coords)
 		elif preload_chunks.has(chunk_coords):
 			preload_list.append(chunk_coords)
 		else:
 			other_list.append(chunk_coords)
 
-	generation_queue = required_list
+	generation_queue = visible_list
+	generation_queue.append_array(required_list)
 	generation_queue.append_array(preload_list)
 	generation_queue.append_array(other_list)
 
@@ -599,7 +629,7 @@ func _process_generation_budget() -> void:
 			_cancel_active_generation_task()
 			continue
 
-		var task_cells: Array[Vector2i] = _get_task_vector2i_array(active_generation_task, "cells")
+		var task_cells: Array = active_generation_task.get("cells", [])
 		var next_local_index: int = int(active_generation_task.get("next_local_index", 0))
 		if next_local_index >= task_cells.size():
 			_finish_generation_task(active_generation_task)
@@ -659,13 +689,13 @@ func _finish_generation_task(task: Dictionary) -> void:
 		return
 
 	var chunk_coords: Vector2i = task.get("chunk_coords", Vector2i.ZERO)
-	var base_cells: Array[Vector2i] = _get_task_vector2i_array(task, "cells")
-	var resource_cells: Array[Vector2i] = []
+	var base_cells: Array = task.get("cells", [])
+	var resource_cells: Array = []
 	if include_resources_runtime:
 		resource_cells = base_cells
 		if not _runtime_uses_source_map:
 			_apply_runtime_resources_to_cells(base_cells)
-	var transition_cells: Array[Vector2i] = []
+	var transition_cells: Array = []
 	if include_transitions_runtime:
 		transition_cells = _collect_transition_refresh_cells_for_chunk(chunk_coords)
 	chunk_states[chunk_coords] = ChunkState.APPLYING
@@ -686,7 +716,7 @@ func _cancel_active_generation_task() -> void:
 	if active_generation_task.is_empty():
 		return
 
-	var task_cells: Array[Vector2i] = _get_task_vector2i_array(active_generation_task, "cells")
+	var task_cells: Array = active_generation_task.get("cells", [])
 	var generated_count: int = int(active_generation_task.get("next_local_index", 0))
 	var chunk_coords: Vector2i = active_generation_task.get("chunk_coords", Vector2i.ZERO)
 	for cell_index in range(min(generated_count, task_cells.size())):
@@ -722,7 +752,7 @@ func _process_apply_budget() -> void:
 
 	while tile_writes_this_frame < budget and not apply_queue.is_empty():
 		var task: Dictionary = apply_queue[0]
-		var base_cells: Array[Vector2i] = _get_task_vector2i_array(task, "base_cells")
+		var base_cells: Array = task.get("base_cells", [])
 		var base_index: int = int(task.get("base_index", 0))
 		if base_index < base_cells.size():
 			var base_cell: Vector2i = base_cells[base_index]
@@ -731,7 +761,7 @@ func _process_apply_budget() -> void:
 			apply_queue[0] = task
 			continue
 
-		var resource_cells: Array[Vector2i] = _get_task_vector2i_array(task, "resource_cells")
+		var resource_cells: Array = task.get("resource_cells", [])
 		var resource_index: int = int(task.get("resource_index", 0))
 		if include_resources_runtime and resource_layer != null and resource_index < resource_cells.size():
 			var resource_cell: Vector2i = resource_cells[resource_index]
@@ -740,7 +770,7 @@ func _process_apply_budget() -> void:
 			apply_queue[0] = task
 			continue
 
-		var transition_cells: Array[Vector2i] = _get_task_vector2i_array(task, "transition_cells")
+		var transition_cells: Array = task.get("transition_cells", [])
 		var transition_index: int = int(task.get("transition_index", 0))
 		if include_transitions_runtime and transition_layer != null and transition_index < transition_cells.size():
 			var transition_cell: Vector2i = transition_cells[transition_index]
@@ -777,7 +807,7 @@ func _process_unload_budget() -> void:
 
 	while unloaded_cells_this_frame < budget and not unload_queue.is_empty():
 		var task: Dictionary = unload_queue[0]
-		var cells: Array[Vector2i] = _get_task_vector2i_array(task, "cells")
+		var cells: Array = task.get("cells", [])
 		var next_index: int = int(task.get("next_index", 0))
 		if next_index >= cells.size():
 			var finished_chunk_coords: Vector2i = task.get("chunk_coords", Vector2i.ZERO)
@@ -946,6 +976,31 @@ func _find_unload_task_index(chunk_coords: Vector2i) -> int:
 	return -1
 
 
+func _find_apply_task_index(chunk_coords: Vector2i) -> int:
+	for queue_index in range(apply_queue.size()):
+		var task: Dictionary = apply_queue[queue_index]
+		if task.get("chunk_coords", Vector2i.ZERO) == chunk_coords:
+			return queue_index
+	return -1
+
+
+func _is_chunk_base_ready(chunk_coords: Vector2i) -> bool:
+	var current_state: int = int(chunk_states.get(chunk_coords, ChunkState.EMPTY))
+	if current_state == ChunkState.VISIBLE:
+		return true
+	if current_state != ChunkState.APPLYING:
+		return false
+
+	var task_index := _find_apply_task_index(chunk_coords)
+	if task_index < 0:
+		return false
+
+	var task: Dictionary = apply_queue[task_index]
+	var base_cells: Array = task.get("base_cells", [])
+	var base_index: int = int(task.get("base_index", 0))
+	return base_index >= base_cells.size()
+
+
 func _collect_transition_refresh_cells_for_chunk(chunk_coords: Vector2i) -> Array[Vector2i]:
 	if map_data == null:
 		return []
@@ -1008,7 +1063,7 @@ func _enqueue_transition_refresh_task(chunk_coords: Vector2i) -> void:
 	})
 
 
-func _apply_runtime_resources_to_cells(cells: Array[Vector2i]) -> void:
+func _apply_runtime_resources_to_cells(cells: Array) -> void:
 	if not include_resources_runtime:
 		return
 	if generator == null or not generator.has_method("apply_runtime_resource_to_tile"):

@@ -182,7 +182,7 @@ func _setup_chunk_runtime_view(force_flush: bool = false) -> void:
 		_generated_map_data
 	)
 	if force_flush:
-		chunk_streaming_manager.flush_pending_runtime_tasks(chunk_runtime_initial_flush_iterations)
+		chunk_streaming_manager.flush_until_visible_base_ready(chunk_runtime_initial_flush_iterations)
 
 
 func _clear_map_visual_layers() -> void:

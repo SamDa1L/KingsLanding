@@ -142,6 +142,8 @@ func _ready() -> void:
 	worker_assignment_rng.seed = INITIAL_BUILDING_SEED
 	if get_viewport() != null and not get_viewport().size_changed.is_connected(_on_viewport_size_changed):
 		get_viewport().size_changed.connect(_on_viewport_size_changed)
+	if main_camera != null:
+		main_camera.make_current()
 	_setup_economy_systems()
 	_read_demo_map()
 	_setup_placement_overlay()
@@ -153,8 +155,6 @@ func _ready() -> void:
 	_setup_happiness_ui()
 	_setup_riot_ui()
 	_setup_victory_ui()
-	if main_camera != null:
-		main_camera.make_current()
 	_update_placement_overlay()
 	_update_economy_ui()
 	_update_stage14_hud()
