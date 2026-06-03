@@ -19,6 +19,7 @@ config/icon="res://icon.svg"
 
 GameClock="*res://scripts/autoload/GameClock.gd"
 ResourceInventory="*res://scripts/autoload/ResourceInventory.gd"
+WorldSession="*res://scripts/mapgen/world/WorldSession.gd"
 
 [display]
 

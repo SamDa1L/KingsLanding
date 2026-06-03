@@ -1,0 +1,81 @@
+[gd_scene format=3 uid="uid://cfc8miv62af6l"]
+
+[ext_resource type="TileSet" uid="uid://dq6hk7no1sfir" path="res://assets/tilesets/MasterSimple_tileset.tres" id="1_tileset"]
+[ext_resource type="Script" path="res://scripts/demo/PrewarmedSemanticGameplay.gd" id="2_script"]
+
+[node name="PrewarmedSemanticGameplay" type="Node2D"]
+script = ExtResource("2_script")
+
+[node name="MainCamera" type="Camera2D" parent="."]
+zoom = Vector2(1, 1)
+
+[node name="MapRoot" type="Node2D" parent="."]
+
+[node name="GroundLayer" type="TileMapLayer" parent="MapRoot"]
+tile_set = ExtResource("1_tileset")
+
+[node name="ResourceLayer" type="TileMapLayer" parent="MapRoot"]
+z_index = 10
+tile_set = ExtResource("1_tileset")
+
+[node name="TransitionLayer" type="TileMapLayer" parent="MapRoot"]
+z_index = 15
+tile_set = ExtResource("1_tileset")
+
+[node name="UIRoot" type="CanvasLayer" parent="."]
+
+[node name="MapSavePanel" type="PanelContainer" parent="UIRoot"]
+offset_left = 16.0
+offset_top = 16.0
+offset_right = 220.0
+offset_bottom = 92.0
+mouse_filter = 0
+
+[node name="VBoxContainer" type="VBoxContainer" parent="UIRoot/MapSavePanel"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="SaveMapButton" type="Button" parent="UIRoot/MapSavePanel/VBoxContainer"]
+layout_mode = 2
+text = "保存地图"
+
+[node name="ResetMapButton" type="Button" parent="UIRoot/MapSavePanel/VBoxContainer"]
+layout_mode = 2
+text = "重置"
+
+[node name="InfoPanel" type="PanelContainer" parent="UIRoot"]
+offset_left = 16.0
+offset_top = 108.0
+offset_right = 460.0
+offset_bottom = 262.0
+mouse_filter = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="UIRoot/InfoPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 8
+
+[node name="VBoxContainer" type="VBoxContainer" parent="UIRoot/InfoPanel/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="StatusLabel" type="Label" parent="UIRoot/InfoPanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 15
+text = "状态：初始化中"
+
+[node name="StatsLabel" type="Label" parent="UIRoot/InfoPanel/MarginContainer/VBoxContainer"]
+custom_minimum_size = Vector2(420, 64)
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
+autowrap_mode = 2
+text = "统计：--"
+
+[node name="HelpLabel" type="Label" parent="UIRoot/InfoPanel/MarginContainer/VBoxContainer"]
+custom_minimum_size = Vector2(420, 40)
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
+autowrap_mode = 2
+text = "方向键移动镜头，鼠标滚轮缩放。当前仅渲染预创建缓存，不做运行时生成。"
