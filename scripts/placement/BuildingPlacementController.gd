@@ -10,11 +10,19 @@ var occupied_cells: Dictionary = {}
 var resource_inventory: Node = null
 
 
-func setup(grid: RefCounted, resource_regions: Dictionary, farmable_regions: Array, next_occupied_cells: Dictionary = {}, castle_cell: Vector2i = Vector2i(-1, -1), next_resource_inventory: Node = null) -> void:
+func setup(
+	grid: RefCounted,
+	resource_regions: Dictionary,
+	farmable_regions: Array,
+	next_occupied_cells: Dictionary = {},
+	castle_cell: Vector2i = Vector2i(-1, -1),
+	next_resource_inventory: Node = null,
+	semantic_query_bridge: RefCounted = null
+) -> void:
 	occupied_cells = next_occupied_cells
 	resource_inventory = next_resource_inventory
 	validator = PlacementValidatorScript.new()
-	validator.setup(grid, resource_regions, farmable_regions, occupied_cells, castle_cell)
+	validator.setup(grid, resource_regions, farmable_regions, occupied_cells, castle_cell, semantic_query_bridge)
 
 
 func can_place(building_type: int, cell: Vector2i) -> RefCounted:

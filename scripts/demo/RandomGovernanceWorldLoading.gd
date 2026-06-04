@@ -62,6 +62,9 @@ var visual_build_done_units: int = 0
 var visual_build_total_units: int = 0
 var visual_build_stage_name: String = ""
 var visual_build_prepared: bool = false
+var visual_build_started_at_usec: int = 0
+var time_to_first_playable_view_usec: int = -1
+var time_to_visual_queue_drained_usec: int = -1
 
 var test_chunk_result_provider: Callable = Callable()
 var test_worker_count_override: int = -1
@@ -90,6 +93,16 @@ func _process(_delta: float) -> void:
 
 	if state == LoadingState.BUILDING_VISUALS:
 		_process_visual_build()
+
+	if last_gameplay_instance != null and (
+		state == LoadingState.BUILDING_VISUALS
+		or state == LoadingState.READY
+		or state == LoadingState.TRANSITIONED
+	):
+		_update_visual_build_progress()
+		_capture_stage0_visual_milestones()
+		if not ready_metrics_snapshot.is_empty():
+			ready_metrics_snapshot["stage0_baseline_metrics"] = get_stage0_baseline_metrics()
 
 	_update_ui()
 
@@ -159,6 +172,9 @@ func start_loading() -> bool:
 	visual_build_total_units = 0
 	visual_build_stage_name = ""
 	visual_build_prepared = false
+	visual_build_started_at_usec = 0
+	time_to_first_playable_view_usec = -1
+	time_to_visual_queue_drained_usec = -1
 	baseline_memory_static_bytes = OS.get_static_memory_usage()
 	ready_memory_static_bytes = 0
 	peak_memory_static_bytes = baseline_memory_static_bytes
@@ -250,6 +266,32 @@ func get_ready_metrics_snapshot() -> Dictionary:
 	return ready_metrics_snapshot.duplicate(true)
 
 
+func get_stage0_baseline_metrics() -> Dictionary:
+	var snapshot: Dictionary = {
+		"loading_elapsed_ms": float(get_elapsed_usec()) / 1000.0,
+		"semantic_generation_elapsed_ms": -1.0,
+		"visual_build_elapsed_ms": -1.0,
+		"time_to_first_playable_view_ms": -1.0,
+		"time_to_visual_queue_drained_ms": -1.0,
+		"visual_build_started": visual_build_started_at_usec > 0,
+		"loading_state": int(state),
+		"ready_memory_metrics": get_ready_metrics_snapshot(),
+		"gameplay_load_metrics": {},
+	}
+
+	if visual_build_started_at_usec > 0 and started_at_usec > 0:
+		snapshot["semantic_generation_elapsed_ms"] = float(max(visual_build_started_at_usec - started_at_usec, 0)) / 1000.0
+		snapshot["visual_build_elapsed_ms"] = float(Time.get_ticks_usec() - visual_build_started_at_usec) / 1000.0
+	if time_to_first_playable_view_usec >= 0:
+		snapshot["time_to_first_playable_view_ms"] = float(time_to_first_playable_view_usec) / 1000.0
+	if time_to_visual_queue_drained_usec >= 0:
+		snapshot["time_to_visual_queue_drained_ms"] = float(time_to_visual_queue_drained_usec) / 1000.0
+	if last_gameplay_instance != null and last_gameplay_instance.has_method("get_load_baseline_metrics_snapshot"):
+		snapshot["gameplay_load_metrics"] = last_gameplay_instance.call("get_load_baseline_metrics_snapshot")
+
+	return snapshot
+
+
 func _on_builder_progress_changed(next_submitted_count: int, _total_count: int) -> void:
 	submitted_chunk_count = next_submitted_count
 	_update_ui()
@@ -281,6 +323,7 @@ func _on_builder_completed(run_id: int, completed_store) -> void:
 	if ready_memory_static_bytes > peak_memory_static_bytes:
 		peak_memory_static_bytes = ready_memory_static_bytes
 	ready_metrics_snapshot = get_memory_metrics()
+	ready_metrics_snapshot["stage0_baseline_metrics"] = get_stage0_baseline_metrics()
 	loading_ready.emit(run_id, completed_store)
 	_update_ui()
 
@@ -311,6 +354,7 @@ func _begin_visual_build_before_transition() -> void:
 		get_tree().root.add_child(last_gameplay_instance)
 
 	state = LoadingState.BUILDING_VISUALS
+	visual_build_started_at_usec = Time.get_ticks_usec()
 	visual_build_done_units = 0
 	visual_build_total_units = 0
 	visual_build_stage_name = "准备绘制"
@@ -345,18 +389,32 @@ func _process_visual_build() -> void:
 
 	var has_more: bool = bool(last_gameplay_instance.call("process_full_visual_build_budget", visual_build_units_per_frame))
 	_update_visual_build_progress()
-	if has_more:
-		return
-
-	if bool(last_gameplay_instance.call("is_full_visual_build_complete")):
-		last_gameplay_instance.call("finalize_full_visual_build")
+	_capture_stage0_visual_milestones()
+	if _is_gameplay_minimum_entry_visual_ready():
+		_finalize_gameplay_entry_visuals()
 		_update_visual_build_progress()
+		_capture_stage0_visual_milestones()
+		ready_metrics_snapshot["stage0_baseline_metrics"] = get_stage0_baseline_metrics()
 		state = LoadingState.READY
 		if auto_transition_to_gameplay:
 			transition_to_gameplay()
-	else:
-		first_error = "Visual build stopped before completion"
-		state = LoadingState.FAILED
+		return
+
+	if has_more:
+		return
+
+	if _is_gameplay_background_visual_build_complete():
+		_finalize_gameplay_entry_visuals()
+		_update_visual_build_progress()
+		_capture_stage0_visual_milestones()
+		ready_metrics_snapshot["stage0_baseline_metrics"] = get_stage0_baseline_metrics()
+		state = LoadingState.READY
+		if auto_transition_to_gameplay:
+			transition_to_gameplay()
+		return
+
+	first_error = "Visual build stopped before minimum entry coverage"
+	state = LoadingState.FAILED
 
 
 func _update_visual_build_progress() -> void:
@@ -365,6 +423,51 @@ func _update_visual_build_progress() -> void:
 	visual_build_stage_name = String(last_gameplay_instance.call("get_visual_build_stage_name"))
 	visual_build_done_units = int(last_gameplay_instance.call("get_visual_build_done_units"))
 	visual_build_total_units = int(last_gameplay_instance.call("get_visual_build_total_units"))
+
+
+func _capture_stage0_visual_milestones() -> void:
+	if last_gameplay_instance == null:
+		return
+	if not last_gameplay_instance.has_method("get_load_baseline_metrics_snapshot"):
+		return
+
+	var gameplay_metrics: Dictionary = last_gameplay_instance.call("get_load_baseline_metrics_snapshot")
+	var first_playable_ms: float = float(gameplay_metrics.get("time_to_first_playable_view_ms", -1.0))
+	var drained_ms: float = float(gameplay_metrics.get("time_to_visual_queue_drained_ms", -1.0))
+
+	if time_to_first_playable_view_usec < 0 and first_playable_ms >= 0.0:
+		time_to_first_playable_view_usec = int(round(first_playable_ms * 1000.0))
+	if time_to_visual_queue_drained_usec < 0 and drained_ms >= 0.0:
+		time_to_visual_queue_drained_usec = int(round(drained_ms * 1000.0))
+
+
+func _is_gameplay_minimum_entry_visual_ready() -> bool:
+	if last_gameplay_instance == null:
+		return false
+	if last_gameplay_instance.has_method("is_minimum_entry_visual_ready"):
+		return bool(last_gameplay_instance.call("is_minimum_entry_visual_ready"))
+	if last_gameplay_instance.has_method("is_full_visual_build_complete"):
+		return bool(last_gameplay_instance.call("is_full_visual_build_complete"))
+	return false
+
+
+func _is_gameplay_background_visual_build_complete() -> bool:
+	if last_gameplay_instance == null:
+		return false
+	if last_gameplay_instance.has_method("is_background_visual_build_complete"):
+		return bool(last_gameplay_instance.call("is_background_visual_build_complete"))
+	if last_gameplay_instance.has_method("is_full_visual_build_complete"):
+		return bool(last_gameplay_instance.call("is_full_visual_build_complete"))
+	return false
+
+
+func _finalize_gameplay_entry_visuals() -> void:
+	if last_gameplay_instance == null:
+		return
+	if last_gameplay_instance.has_method("finalize_minimum_entry_visual_build"):
+		last_gameplay_instance.call("finalize_minimum_entry_visual_build")
+	elif last_gameplay_instance.has_method("finalize_full_visual_build"):
+		last_gameplay_instance.call("finalize_full_visual_build")
 
 
 func _on_builder_failed(run_id: int, next_first_error: String) -> void:

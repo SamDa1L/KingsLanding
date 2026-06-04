@@ -106,6 +106,7 @@ static func collect_loading_metrics(loading: RandomGovernanceWorldLoading) -> Di
 		"average_submit_usec_from_loading": float(loading.get_average_submit_usec()),
 		"submitted_chunk_count": int(loading.submitted_chunk_count),
 		"total_chunk_count": int(loading.total_chunk_count),
+		"stage0_baseline_metrics": loading.get_stage0_baseline_metrics(),
 		"builder_metrics": builder_metrics,
 		"store_metrics": store_metrics,
 	}

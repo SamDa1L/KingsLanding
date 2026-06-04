@@ -9,25 +9,36 @@ var resource_regions: Dictionary = {}
 var farmable_regions: Array = []
 var occupied_cells: Dictionary = {}
 var castle_cell: Vector2i = Vector2i(-1, -1)
+var semantic_query_bridge: RefCounted = null
 
 
-func setup(next_grid: RefCounted, next_resource_regions: Dictionary, next_farmable_regions: Array, next_occupied_cells: Dictionary = {}, next_castle_cell: Vector2i = Vector2i(-1, -1)) -> void:
+func setup(
+	next_grid: RefCounted,
+	next_resource_regions: Dictionary,
+	next_farmable_regions: Array,
+	next_occupied_cells: Dictionary = {},
+	next_castle_cell: Vector2i = Vector2i(-1, -1),
+	next_semantic_query_bridge: RefCounted = null
+) -> void:
 	grid = next_grid
 	resource_regions = next_resource_regions
 	farmable_regions = next_farmable_regions
 	occupied_cells = next_occupied_cells
 	castle_cell = next_castle_cell
+	semantic_query_bridge = next_semantic_query_bridge
 
 
 func validate(building_type: int, cell: Vector2i) -> RefCounted:
-	if grid == null:
+	if grid == null and semantic_query_bridge == null:
 		return _result(false, "网格缺失。", cell, null, building_type)
-	if not grid.is_inside(cell):
+	if semantic_query_bridge == null and not grid.is_inside(cell):
 		return _result(false, "目标格子超出地图范围。", cell, null, building_type)
 	if occupied_cells.has(cell):
 		return _result(false, "目标格子已被占用。", cell, null, building_type)
 
-	var terrain_type: int = grid.get_terrain(cell)
+	var terrain_type: int = _get_terrain_type(cell)
+	if terrain_type < 0:
+		return _result(false, "目标格子语义未就绪。", cell, null, building_type)
 	match building_type:
 		MapTypes.BuildingType.TOWN_CENTER:
 			return _validate_castle(cell, terrain_type)
@@ -52,7 +63,11 @@ func _validate_castle(cell: Vector2i, terrain_type: int) -> RefCounted:
 func _validate_resource_building(cell: Vector2i, terrain_type: int, resource_terrain: int, regions: Array, label: String) -> RefCounted:
 	if terrain_type != MapTypes.TerrainType.EMPTY and terrain_type != MapTypes.TerrainType.PLAIN:
 		return _result(false, "%s必须放置在可建造的空地或平原格子上。" % label, cell, null, -1)
-	var region := _find_region_for_cell_or_adjacency(regions, cell)
+	var region: RefCounted = null
+	if semantic_query_bridge != null and semantic_query_bridge.has_method("find_resource_region_for_building_cell"):
+		region = semantic_query_bridge.call("find_resource_region_for_building_cell", cell, resource_terrain)
+	else:
+		region = _find_region_for_cell_or_adjacency(regions, cell)
 	if region == null:
 		return _result(false, "%s必须贴近%s板块。" % [label, MapTypes.get_terrain_label(resource_terrain)], cell, null, -1)
 	return _result(true, "", cell, region, -1)
@@ -61,7 +76,11 @@ func _validate_resource_building(cell: Vector2i, terrain_type: int, resource_ter
 func _validate_farm(cell: Vector2i, terrain_type: int) -> RefCounted:
 	if terrain_type != MapTypes.TerrainType.PLAIN:
 		return _result(false, "农场必须放置在平原地块上。", cell, null, MapTypes.BuildingType.FARM)
-	var region := _find_region_containing_cell(farmable_regions, cell)
+	var region: RefCounted = null
+	if semantic_query_bridge != null and semantic_query_bridge.has_method("find_farmable_region_for_cell"):
+		region = semantic_query_bridge.call("find_farmable_region_for_cell", cell)
+	else:
+		region = _find_region_containing_cell(farmable_regions, cell)
 	if region == null:
 		return _result(false, "农场必须放置在可耕种的平原板块内。", cell, null, MapTypes.BuildingType.FARM)
 	return _result(true, "", cell, region, MapTypes.BuildingType.FARM)
@@ -91,6 +110,14 @@ func _find_region_containing_cell(regions: Array, cell: Vector2i) -> RefCounted:
 
 func _is_castle_terrain(terrain_type: int) -> bool:
 	return terrain_type == MapTypes.TerrainType.EMPTY or terrain_type == MapTypes.TerrainType.PLAIN or terrain_type == MapTypes.TerrainType.TOWN_CENTER
+
+
+func _get_terrain_type(cell: Vector2i) -> int:
+	if semantic_query_bridge != null and semantic_query_bridge.has_method("get_terrain"):
+		return int(semantic_query_bridge.call("get_terrain", cell))
+	if grid == null:
+		return -1
+	return grid.get_terrain(cell)
 
 
 func _result(can_place: bool, reason: String, cell: Vector2i, region: RefCounted, building_type: int) -> RefCounted:
