@@ -78,6 +78,23 @@ func get_all_resources() -> Dictionary:
 	return _resources.duplicate()
 
 
+func to_save_data() -> Dictionary:
+	return {
+		"resources": get_all_resources(),
+	}
+
+
+func restore_from_save_data(save_data: Dictionary) -> bool:
+	if save_data.is_empty():
+		return false
+	var resources_variant: Variant = save_data.get("resources", {})
+	if typeof(resources_variant) != TYPE_DICTIONARY:
+		return false
+	var resources: Dictionary = resources_variant
+	reset_resources(resources)
+	return true
+
+
 func emit_inventory_changed() -> void:
 	inventory_changed.emit(get_all_resources())
 

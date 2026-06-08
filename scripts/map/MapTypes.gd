@@ -36,6 +36,16 @@ const RESOURCE_STONE: StringName = &"stone"
 const RESOURCE_GOLD: StringName = &"gold"
 
 const CARDINAL_DIRECTIONS: Array[Vector2i] = [Vector2i.UP, Vector2i.RIGHT, Vector2i.DOWN, Vector2i.LEFT]
+const EIGHT_DIRECTIONS: Array[Vector2i] = [
+	Vector2i.UP,
+	Vector2i.RIGHT,
+	Vector2i.DOWN,
+	Vector2i.LEFT,
+	Vector2i(-1, -1),
+	Vector2i(1, -1),
+	Vector2i(1, 1),
+	Vector2i(-1, 1),
+]
 
 
 static func is_resource_terrain(terrain_type: int) -> bool:
@@ -50,6 +60,15 @@ static func is_walkable_terrain(terrain_type: int) -> bool:
 	return terrain_type != TerrainType.WATER and terrain_type != TerrainType.MOUNTAIN
 
 
+static func is_villager_walkable_terrain(terrain_type: int) -> bool:
+	return (
+		terrain_type == TerrainType.TOWN_CENTER
+		or terrain_type == TerrainType.PLAIN
+		or terrain_type == TerrainType.ROAD
+		or terrain_type == TerrainType.EMPTY
+	)
+
+
 static func is_buildable_terrain(terrain_type: int) -> bool:
 	return terrain_type == TerrainType.EMPTY or terrain_type == TerrainType.PLAIN
 
@@ -62,6 +81,10 @@ static func get_cardinal_directions() -> Array[Vector2i]:
 	return CARDINAL_DIRECTIONS.duplicate()
 
 
+static func get_eight_directions() -> Array[Vector2i]:
+	return EIGHT_DIRECTIONS.duplicate()
+
+
 static func get_terrain_label(terrain_type: int) -> String:
 	match terrain_type:
 		TerrainType.TOWN_CENTER:
@@ -69,7 +92,7 @@ static func get_terrain_label(terrain_type: int) -> String:
 		TerrainType.FOREST:
 			return "森林"
 		TerrainType.STONE:
-			return "石料"
+			return "石材"
 		TerrainType.PLAIN:
 			return "平原"
 		TerrainType.ROAD:
@@ -125,9 +148,9 @@ static func get_resource_name_for_terrain(terrain_type: int) -> StringName:
 static func get_resource_label_for_terrain(terrain_type: int) -> String:
 	match terrain_type:
 		TerrainType.FOREST:
-			return "木材"
+			return "木头"
 		TerrainType.STONE:
-			return "石料"
+			return "石材"
 		_:
 			return ""
 

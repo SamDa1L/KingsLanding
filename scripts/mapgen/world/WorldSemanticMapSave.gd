@@ -9,7 +9,9 @@ const WorldSemanticChunkScript := preload("res://scripts/mapgen/world/WorldSeman
 const WorldSemanticStoreScript := preload("res://scripts/mapgen/world/WorldSemanticStore.gd")
 
 const LEGACY_SAVE_VERSION: int = 1
-const SAVE_VERSION: int = 2
+const SAVE_VERSION_WITH_BOOTSTRAP_CACHE: int = 2
+const SAVE_VERSION: int = 3
+const GAMEPLAY_STATE_VERSION: int = 1
 const LEGACY_BOOTSTRAP_CACHE_VERSION: int = 1
 const BOOTSTRAP_CACHE_VERSION: int = 2
 const CHUNK_STORAGE_VERSION: int = 2
@@ -32,7 +34,8 @@ static func save_world(
 	camera_cell: Vector2i,
 	camera_zoom: float,
 	governance_bootstrap_context: Dictionary = {},
-	save_path: String = DEFAULT_SAVE_PATH
+	save_path: String = DEFAULT_SAVE_PATH,
+	gameplay_state: Dictionary = {}
 ) -> bool:
 	if identity == null or not identity.is_valid():
 		return false
@@ -47,6 +50,7 @@ static func save_world(
 		"camera_cell": camera_cell,
 		"camera_zoom": camera_zoom,
 		"governance_bootstrap_cache": bootstrap_context_to_cache_dto(identity, governance_bootstrap_context),
+		"gameplay_state": _sanitize_gameplay_state(gameplay_state),
 	}
 
 	var file := FileAccess.open(save_path, FileAccess.WRITE)
@@ -69,7 +73,7 @@ static func load_world(save_path: String = DEFAULT_SAVE_PATH) -> Dictionary:
 		return {}
 	var save_data: Dictionary = save_data_variant
 	var save_version: int = int(save_data.get("save_version", 0))
-	if save_version != LEGACY_SAVE_VERSION and save_version != SAVE_VERSION:
+	if not _is_supported_save_version(save_version):
 		return {}
 
 	var identity: WorldGenerationIdentity = _identity_from_data(save_data.get("identity", {}))
@@ -93,6 +97,7 @@ static func load_world(save_path: String = DEFAULT_SAVE_PATH) -> Dictionary:
 		"camera_cell": save_data.get("camera_cell", Vector2i.ZERO),
 		"camera_zoom": float(save_data.get("camera_zoom", 1.0)),
 		"governance_bootstrap_cache": governance_bootstrap_cache,
+		"gameplay_state": _sanitize_gameplay_state(save_data.get("gameplay_state", {})),
 	}
 
 
@@ -144,6 +149,7 @@ static func bootstrap_context_to_cache_dto(
 		"grid_width": int(grid.width),
 		"grid_height": int(grid.height),
 		"grid_terrain_ids": terrain_ids,
+		"grid_blocks_movement": _grid_to_blocks_movement(grid),
 	}
 	_append_compact_region_payload(cache_dto, "resource_", resource_region_payload)
 	_append_compact_region_payload(cache_dto, "farmable_", farmable_region_payload)
@@ -215,6 +221,26 @@ static func validate_bootstrap_cache_dto_identity(
 			return "bootstrap cache bootstrap tile rect mismatch"
 
 	return ""
+
+
+static func _is_supported_save_version(save_version: int) -> bool:
+	return (
+		save_version == LEGACY_SAVE_VERSION
+		or save_version == SAVE_VERSION_WITH_BOOTSTRAP_CACHE
+		or save_version == SAVE_VERSION
+	)
+
+
+static func _sanitize_gameplay_state(gameplay_state_variant: Variant) -> Dictionary:
+	if typeof(gameplay_state_variant) != TYPE_DICTIONARY:
+		return {}
+	var gameplay_state: Dictionary = gameplay_state_variant
+	if gameplay_state.is_empty():
+		return {}
+	var gameplay_state_version: int = int(gameplay_state.get("gameplay_state_version", 0))
+	if gameplay_state_version != GAMEPLAY_STATE_VERSION:
+		return {}
+	return gameplay_state.duplicate(true)
 
 
 static func _identity_to_data(identity: WorldGenerationIdentity) -> Dictionary:
@@ -401,6 +427,8 @@ static func _sanitize_bootstrap_cache_dto_v1(cache_dto: Dictionary) -> Dictionar
 		return {}
 	if typeof(cache_dto.get("grid_terrain_ids", PackedInt32Array())) != TYPE_PACKED_INT32_ARRAY:
 		return {}
+	if cache_dto.has("grid_blocks_movement") and typeof(cache_dto.get("grid_blocks_movement", PackedByteArray())) != TYPE_PACKED_BYTE_ARRAY:
+		return {}
 	if typeof(cache_dto.get("resource_region_dtos", [])) != TYPE_ARRAY:
 		return {}
 	if typeof(cache_dto.get("farmable_region_dtos", [])) != TYPE_ARRAY:
@@ -415,6 +443,10 @@ static func _sanitize_bootstrap_cache_dto_v1(cache_dto: Dictionary) -> Dictionar
 	var terrain_ids: PackedInt32Array = cache_dto.get("grid_terrain_ids", PackedInt32Array())
 	if terrain_ids.size() != grid_width * grid_height:
 		return {}
+	if cache_dto.has("grid_blocks_movement"):
+		var blocks_movement: PackedByteArray = cache_dto.get("grid_blocks_movement", PackedByteArray())
+		if blocks_movement.size() != grid_width * grid_height:
+			return {}
 	return cache_dto.duplicate(true)
 
 
@@ -431,6 +463,8 @@ static func _sanitize_bootstrap_cache_dto_v2(cache_dto: Dictionary) -> Dictionar
 		return {}
 	if typeof(cache_dto.get("grid_terrain_ids", PackedInt32Array())) != TYPE_PACKED_INT32_ARRAY:
 		return {}
+	if cache_dto.has("grid_blocks_movement") and typeof(cache_dto.get("grid_blocks_movement", PackedByteArray())) != TYPE_PACKED_BYTE_ARRAY:
+		return {}
 	if typeof(cache_dto.get("terrain_counts", {})) != TYPE_DICTIONARY:
 		return {}
 
@@ -441,6 +475,10 @@ static func _sanitize_bootstrap_cache_dto_v2(cache_dto: Dictionary) -> Dictionar
 	var terrain_ids: PackedInt32Array = cache_dto.get("grid_terrain_ids", PackedInt32Array())
 	if terrain_ids.size() != grid_width * grid_height:
 		return {}
+	if cache_dto.has("grid_blocks_movement"):
+		var blocks_movement: PackedByteArray = cache_dto.get("grid_blocks_movement", PackedByteArray())
+		if blocks_movement.size() != grid_width * grid_height:
+			return {}
 	if not _validate_compact_region_payload(cache_dto, "resource_"):
 		return {}
 	if not _validate_compact_region_payload(cache_dto, "farmable_"):
@@ -462,13 +500,30 @@ static func _grid_to_terrain_ids(grid: GridMapData) -> PackedInt32Array:
 	return terrain_ids
 
 
+static func _grid_to_blocks_movement(grid: GridMapData) -> PackedByteArray:
+	var blocks_movement := PackedByteArray()
+	if grid == null:
+		return blocks_movement
+
+	blocks_movement.resize(grid.width * grid.height)
+	var write_index: int = 0
+	for y in range(grid.height):
+		for x in range(grid.width):
+			blocks_movement[write_index] = 1 if grid.get_blocks_movement(Vector2i(x, y)) else 0
+			write_index += 1
+	return blocks_movement
+
+
 static func _grid_from_cache_dto(cache_dto: Dictionary) -> GridMapData:
 	var grid_width: int = int(cache_dto.get("grid_width", 0))
 	var grid_height: int = int(cache_dto.get("grid_height", 0))
 	var terrain_ids: PackedInt32Array = cache_dto.get("grid_terrain_ids", PackedInt32Array())
+	var blocks_movement: PackedByteArray = cache_dto.get("grid_blocks_movement", PackedByteArray())
 	if grid_width <= 0 or grid_height <= 0:
 		return null
 	if terrain_ids.size() != grid_width * grid_height:
+		return null
+	if blocks_movement.size() > 0 and blocks_movement.size() != grid_width * grid_height:
 		return null
 
 	var grid := GridMapDataScript.new()
@@ -476,7 +531,10 @@ static func _grid_from_cache_dto(cache_dto: Dictionary) -> GridMapData:
 	var read_index: int = 0
 	for y in range(grid_height):
 		for x in range(grid_width):
-			grid.set_terrain(Vector2i(x, y), int(terrain_ids[read_index]))
+			var cell := Vector2i(x, y)
+			grid.set_terrain(cell, int(terrain_ids[read_index]))
+			if blocks_movement.size() > 0:
+				grid.set_blocks_movement(cell, blocks_movement[read_index] != 0)
 			read_index += 1
 	return grid
 

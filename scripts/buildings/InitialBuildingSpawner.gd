@@ -3,6 +3,7 @@ extends RefCounted
 
 const MapTypes := preload("res://scripts/map/MapTypes.gd")
 const BuildingDataScript := preload("res://scripts/buildings/BuildingData.gd")
+const BuildingFootprintRulesScript := preload("res://scripts/buildings/BuildingFootprintRules.gd")
 const DEFAULT_RANDOM_SEED := 20260523
 
 var last_spawn_warnings: Array[String] = []
@@ -10,7 +11,13 @@ var last_spawn_warnings: Array[String] = []
 var _rng := RandomNumberGenerator.new()
 
 
-func spawn_initial_buildings(grid: RefCounted, resource_regions: Dictionary, farmable_regions: Array, seed: int = DEFAULT_RANDOM_SEED) -> Array:
+func spawn_initial_buildings(
+	grid: RefCounted,
+	resource_regions: Dictionary,
+	farmable_regions: Array,
+	seed: int = DEFAULT_RANDOM_SEED,
+	include_production_buildings: bool = true
+) -> Array:
 	last_spawn_warnings.clear()
 	_rng.seed = seed
 
@@ -19,6 +26,8 @@ func spawn_initial_buildings(grid: RefCounted, resource_regions: Dictionary, far
 	var castle := _spawn_castle(grid, occupied_cells)
 	if castle != null:
 		buildings.append(castle)
+	if not include_production_buildings:
+		return buildings
 	var lumber_camp := _spawn_building_for_regions(
 		resource_regions.get(MapTypes.TerrainType.FOREST, []),
 		MapTypes.BuildingType.LUMBER_CAMP,
@@ -49,7 +58,7 @@ func _spawn_castle(grid: RefCounted, occupied_cells: Dictionary) -> RefCounted:
 		return null
 
 	var building := _create_building(MapTypes.BuildingType.TOWN_CENTER, castle_cell, -1)
-	occupied_cells[castle_cell] = true
+	BuildingFootprintRulesScript.register_building_footprint(occupied_cells, MapTypes.BuildingType.TOWN_CENTER, castle_cell)
 	return building
 
 
@@ -59,28 +68,12 @@ func _find_castle_cell(grid: RefCounted) -> Vector2i:
 
 	var town_center_cell := _find_nearest_cell_with_terrain(grid, MapTypes.TerrainType.TOWN_CENTER)
 	if town_center_cell.x >= 0 and town_center_cell.y >= 0:
-		return town_center_cell
+		if BuildingFootprintRulesScript.is_castle_footprint_valid(grid, town_center_cell):
+			return town_center_cell
+		return BuildingFootprintRulesScript.find_nearest_valid_castle_cell(grid, town_center_cell)
 
 	var center := Vector2i(grid.width / 2, grid.height / 2)
-	if _is_castle_terrain(grid.get_terrain(center)):
-		return center
-
-	var visited: Dictionary = {center: true}
-	var queue: Array[Vector2i] = [center]
-	var queue_index := 0
-	while queue_index < queue.size():
-		var current: Vector2i = queue[queue_index]
-		queue_index += 1
-		for direction in MapTypes.get_cardinal_directions():
-			var neighbor: Vector2i = current + direction
-			if visited.has(neighbor) or not grid.is_inside(neighbor):
-				continue
-			visited[neighbor] = true
-			if _is_castle_terrain(grid.get_terrain(neighbor)):
-				return neighbor
-			queue.append(neighbor)
-
-	return Vector2i(-1, -1)
+	return BuildingFootprintRulesScript.find_nearest_valid_castle_cell(grid, center)
 
 
 func _find_nearest_cell_with_terrain(grid: RefCounted, terrain_type: int) -> Vector2i:
@@ -102,7 +95,7 @@ func _find_nearest_cell_with_terrain(grid: RefCounted, terrain_type: int) -> Vec
 
 
 func _is_castle_terrain(terrain_type: int) -> bool:
-	return terrain_type == MapTypes.TerrainType.EMPTY or terrain_type == MapTypes.TerrainType.PLAIN or terrain_type == MapTypes.TerrainType.TOWN_CENTER
+	return BuildingFootprintRulesScript.is_castle_terrain(terrain_type)
 
 
 func _spawn_building_for_regions(regions: Array, building_type: int, occupied_cells: Dictionary) -> RefCounted:
@@ -165,4 +158,3 @@ func _shuffled_vector_array(values: Array[Vector2i]) -> Array[Vector2i]:
 		result[index] = result[swap_index]
 		result[swap_index] = temp
 	return result
-

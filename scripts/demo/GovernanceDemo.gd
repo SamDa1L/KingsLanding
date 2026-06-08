@@ -4,7 +4,11 @@ const DemoMapReaderScript := preload("res://scripts/demo/DemoMapReader.gd")
 const ResourceRegionScannerScript := preload("res://scripts/map/ResourceRegionScanner.gd")
 const InitialBuildingSpawnerScript := preload("res://scripts/buildings/InitialBuildingSpawner.gd")
 const BuildingPlacementControllerScript := preload("res://scripts/placement/BuildingPlacementController.gd")
+const BuildingFootprintRulesScript := preload("res://scripts/buildings/BuildingFootprintRules.gd")
 const ProductionCalculatorScript := preload("res://scripts/economy/ProductionCalculator.gd")
+const ResourceDepletionStateScript := preload("res://scripts/resources/ResourceDepletionState.gd")
+const GeneratedTileDataScript := preload("res://scripts/mapgen/GeneratedTileData.gd")
+const TileRenderDefinitionScript := preload("res://scripts/mapgen/TileRenderDefinition.gd")
 const GovernanceStateScript := preload("res://scripts/governance/GovernanceState.gd")
 const TaxSystemScript := preload("res://scripts/governance/TaxSystem.gd")
 const HappinessSystemScript := preload("res://scripts/governance/HappinessSystem.gd")
@@ -27,6 +31,10 @@ const WORK_ENTRY_OFFSET := Vector2(0, 36)
 const VILLAGER_START_DELAY_STEP := 1.2
 const IDLE_VILLAGER_START_DELAY_STEP := 0.35
 const INITIAL_POPULATION := 3
+const CASTLE_POPULATION_CAPACITY := INITIAL_POPULATION
+const CASTLE_INITIAL_VILLAGER_WANDER_BOUNDS_SIZE := Vector2(192, 192)
+const CASTLE_INITIAL_VILLAGER_WANDER_REACH_RADIUS := 20
+const CASTLE_INITIAL_VILLAGER_WANDER_PREFERRED_RADIUS := 14
 const PLACEMENT_PREVIEW_SIZE := Vector2(56, 56)
 const PLACEMENT_VALID_COLOR := Color(0.2, 0.95, 0.3, 0.42)
 const PLACEMENT_INVALID_COLOR := Color(1.0, 0.18, 0.12, 0.42)
@@ -42,8 +50,21 @@ const HAPPINESS_PANEL_HEIGHT := 84.0
 const PLACEMENT_PANEL_HEIGHT := 372.0
 const WORKER_POPUP_MARGIN := 8.0
 const WORKER_POPUP_Y_OFFSET := 12.0
+const VILLAGER_NAVIGATION_TERRAIN_MISS := -1
+const VILLAGER_PATH_RETRY_COUNT := 3
+const RESOURCE_TASK_IDLE := &"idle"
+const RESOURCE_TASK_GOING_TO_RESOURCE := &"going_to_resource"
+const RESOURCE_TASK_COLLECTING := &"collecting"
+const RESOURCE_TASK_RETURNING_TO_BUILDING := &"returning_to_building"
+const RESOURCE_TASK_DELIVERING := &"delivering"
+const RESOURCE_TASK_WAITING_FOR_STORAGE := &"waiting_for_storage"
+const RESOURCE_TASK_RESTING := &"resting"
+const RESOURCE_TASK_FAILED := &"failed"
+const RESOURCE_TASK_CARRY_AMOUNT := 5.0
+const RESOURCE_TASK_DEFAULT_SHIFT_MINUTES := 90.0
 
 @export var enable_console_debug_logs: bool = false
+@export var spawn_initial_production_buildings: bool = false
 
 @onready var ground_layer: TileMapLayer = $MapRoot/GroundLayer
 @onready var resource_layer: TileMapLayer = $MapRoot/ResourceLayer
@@ -71,6 +92,7 @@ const WORKER_POPUP_Y_OFFSET := 12.0
 @onready var worker_minus_button: Button = $UIRoot/PlacementPanel/VBoxContainer/WorkerControlPanel/VBoxContainer/HBoxContainer/WorkerMinusButton
 @onready var worker_count_label: Label = $UIRoot/PlacementPanel/VBoxContainer/WorkerControlPanel/VBoxContainer/HBoxContainer/WorkerCountLabel
 @onready var worker_plus_button: Button = $UIRoot/PlacementPanel/VBoxContainer/WorkerControlPanel/VBoxContainer/HBoxContainer/WorkerPlusButton
+@onready var harvest_button: Button = $UIRoot/PlacementPanel/VBoxContainer/HarvestButton
 @onready var worker_popup_panel: PanelContainer = $UIRoot/WorkerPopupPanel
 @onready var worker_popup_status_label: Label = $UIRoot/WorkerPopupPanel/MarginContainer/VBoxContainer/WorkerPopupStatusLabel
 @onready var worker_popup_minus_button: Button = $UIRoot/WorkerPopupPanel/MarginContainer/VBoxContainer/HBoxContainer/WorkerPopupMinusButton
@@ -94,6 +116,9 @@ const WORKER_POPUP_Y_OFFSET := 12.0
 @onready var time_control_panel: PanelContainer = $UIRoot/TimeControlPanel
 @onready var tax_panel: PanelContainer = $UIRoot/TaxPanel
 @onready var happiness_panel: PanelContainer = $UIRoot/HappinessPanel
+@onready var riot_panel: PanelContainer = $UIRoot/RiotPanel
+@onready var victory_panel: PanelContainer = $UIRoot/VictoryPanel
+@onready var hud_panel: PanelContainer = $UIRoot/HudPanel
 @onready var main_camera: Camera2D = $MainCamera
 
 var grid: RefCounted
@@ -105,6 +130,7 @@ var villager_states: Dictionary = {}
 var occupied_cells: Dictionary = {}
 var placement_controller: RefCounted = null
 var production_calculator: RefCounted = null
+var resource_depletion_state: RefCounted = null
 var governance_state: RefCounted = null
 var resource_inventory: Node = null
 var game_clock: Node = null
@@ -135,7 +161,9 @@ var is_camera_dragging: bool = false
 var camera_drag_last_mouse: Vector2 = Vector2.ZERO
 var worker_assignment_rng := RandomNumberGenerator.new()
 var villager_assignments: Dictionary = {}
+var worker_resource_tasks: Dictionary = {}
 var _is_syncing_population_state: bool = false
+var pending_house_villager_spawn_contexts: Array[Dictionary] = []
 
 
 func _ready() -> void:
@@ -213,18 +241,19 @@ func _apply_ui_layout() -> void:
 		tax_status_label.custom_minimum_size = Vector2(304, 68)
 	if happiness_status_label != null:
 		happiness_status_label.custom_minimum_size = Vector2(304, 64)
+	var showing_production_menu := not placement_mode_active and _is_selected_building_manageable_production()
 	if placement_status_label != null:
-		placement_status_label.custom_minimum_size = Vector2(304, 42)
+		placement_status_label.custom_minimum_size = Vector2(304, 118) if showing_production_menu else Vector2(304, 42)
 	if worker_control_panel != null:
-		worker_control_panel.visible = false
+		worker_control_panel.custom_minimum_size = Vector2(304, 86)
 	if worker_status_label != null:
-		worker_status_label.text = ""
+		worker_status_label.custom_minimum_size = Vector2(292, 24)
 	if worker_count_label != null:
-		worker_count_label.text = ""
+		worker_count_label.custom_minimum_size = Vector2(172, 28)
 	if worker_minus_button != null:
-		worker_minus_button.visible = false
+		worker_minus_button.custom_minimum_size = Vector2(56, 36)
 	if worker_plus_button != null:
-		worker_plus_button.visible = false
+		worker_plus_button.custom_minimum_size = Vector2(56, 36)
 	if worker_popup_panel != null:
 		worker_popup_panel.custom_minimum_size = Vector2(236, 78)
 	if worker_popup_status_label != null:
@@ -272,8 +301,12 @@ func _input(event: InputEvent) -> void:
 	_handle_camera_input(event)
 
 
-func _process(_delta: float) -> void:
-	_update_placement_hover()
+func _process(delta: float) -> void:
+	_tick_worker_resource_tasks(_get_scaled_game_minutes(delta))
+	if placement_mode_active:
+		_update_placement_hover()
+	else:
+		_update_resource_hover_hint()
 	_update_camera_drag()
 	_position_worker_popup_panel()
 
@@ -364,6 +397,7 @@ func _on_viewport_size_changed() -> void:
 
 func _setup_economy_systems() -> void:
 	production_calculator = ProductionCalculatorScript.new()
+	resource_depletion_state = ResourceDepletionStateScript.new()
 	tax_system = TaxSystemScript.new()
 	happiness_system = HappinessSystemScript.new()
 	riot_system = RiotSystemScript.new()
@@ -548,9 +582,9 @@ func _update_top_resource_bar() -> void:
 		food_label.text = "食物 %d" % int(float(resources.get(MapTypes.RESOURCE_FOOD, 0.0)))
 		_update_food_tooltip()
 	if wood_label != null:
-		wood_label.text = "木材 %d" % int(float(resources.get(MapTypes.RESOURCE_WOOD, 0.0)))
+		wood_label.text = "木头 %d" % int(float(resources.get(MapTypes.RESOURCE_WOOD, 0.0)))
 	if stone_label != null:
-		stone_label.text = "石料 %d" % int(float(resources.get(MapTypes.RESOURCE_STONE, 0.0)))
+		stone_label.text = "石材 %d" % int(float(resources.get(MapTypes.RESOURCE_STONE, 0.0)))
 
 
 func _update_food_tooltip() -> void:
@@ -618,11 +652,17 @@ func _get_current_total_minutes() -> int:
 
 
 func _get_population_cap() -> int:
+	var castle_capacity := 0
 	var house_count := 0
 	for building in initial_buildings:
-		if building != null and int(building.building_type) == MapTypes.BuildingType.HOUSE:
-			house_count += 1
-	var house_capacity := INITIAL_POPULATION + house_count * HOUSE_POPULATION_CAPACITY
+		if building == null:
+			continue
+		match int(building.building_type):
+			MapTypes.BuildingType.TOWN_CENTER:
+				castle_capacity += CASTLE_POPULATION_CAPACITY
+			MapTypes.BuildingType.HOUSE:
+				house_count += 1
+	var house_capacity := castle_capacity + house_count * HOUSE_POPULATION_CAPACITY
 	if governance_state == null:
 		return house_capacity
 	return max(int(governance_state.population), house_capacity)
@@ -644,12 +684,22 @@ func _is_game_time_paused() -> bool:
 	return false
 
 
+func _get_scaled_game_minutes(delta: float) -> float:
+	if delta <= 0.0:
+		return 0.0
+	if game_clock != null and game_clock.has_method("get_scaled_delta") and game_clock.has_method("get_minutes_per_second"):
+		return float(game_clock.call("get_scaled_delta", delta)) * float(game_clock.call("get_minutes_per_second"))
+	if _is_game_time_paused():
+		return 0.0
+	return delta
+
+
 func _get_starting_resources() -> Dictionary:
 	return {
-		MapTypes.RESOURCE_FOOD: 20.0,
-		MapTypes.RESOURCE_WOOD: 24.0,
-		MapTypes.RESOURCE_STONE: 16.0,
-		MapTypes.RESOURCE_GOLD: 20.0,
+		MapTypes.RESOURCE_FOOD: 40.0,
+		MapTypes.RESOURCE_WOOD: 36.0,
+		MapTypes.RESOURCE_STONE: 28.0,
+		MapTypes.RESOURCE_GOLD: 24.0,
 	}
 
 
@@ -675,10 +725,17 @@ func _spawn_initial_buildings() -> void:
 	event_log_messages.clear()
 	occupied_cells.clear()
 	var spawner := InitialBuildingSpawnerScript.new()
-	initial_buildings = spawner.spawn_initial_buildings(grid, resource_regions, farmable_regions, INITIAL_BUILDING_SEED)
+	initial_buildings = spawner.spawn_initial_buildings(
+		grid,
+		resource_regions,
+		farmable_regions,
+		INITIAL_BUILDING_SEED,
+		spawn_initial_production_buildings
+	)
 	for building in initial_buildings:
-		_register_occupied_cell(building.position)
+		_register_occupied_cells_for_building(building)
 		_instantiate_building_visual(building)
+		_clear_building_footprint_resource_visuals(building)
 		_append_initial_building_event(building)
 	_initialize_worker_assignments()
 	_sync_villager_population_to_assignments()
@@ -700,6 +757,7 @@ func _clear_villager_nodes() -> void:
 		child.queue_free()
 	villager_states.clear()
 	villager_assignments.clear()
+	worker_resource_tasks.clear()
 
 
 func _instantiate_building_visual(building: RefCounted) -> Node2D:
@@ -740,9 +798,16 @@ func _spawn_villager_route(index: int, home_position: Vector2, work_position: Ve
 	characters_root.add_child(villager)
 	if villager.has_signal("state_changed"):
 		villager.connect("state_changed", Callable(self, "_on_villager_state_changed"))
-	villager.call("setup_route", home_position, work_position, float(index) * VILLAGER_START_DELAY_STEP)
+	villager.call(
+		"setup_route",
+		home_position,
+		work_position,
+		float(index) * VILLAGER_START_DELAY_STEP,
+		Callable(self, "_build_villager_route_points")
+	)
 	villager_states[villager] = villager.call("get_state_name")
 	villager_assignments[villager] = work_building
+	_start_or_clear_worker_resource_task(villager, work_building)
 	if enable_console_debug_logs:
 		print(
 			"stage6 villager route | name=", villager.name,
@@ -772,7 +837,9 @@ func _spawn_idle_villager(index: int, anchor_position: Vector2, wander_bounds: R
 		anchor_position,
 		wander_bounds,
 		float(index) * IDLE_VILLAGER_START_DELAY_STEP,
-		IDLE_VILLAGER_WANDER_RADIUS
+		IDLE_VILLAGER_WANDER_RADIUS,
+		Callable(self, "_build_villager_route_points"),
+		Callable(self, "_pick_villager_wander_target_position")
 	)
 	villager_states[villager] = villager.call("get_state_name")
 	villager_assignments[villager] = null
@@ -892,7 +959,7 @@ func _rebuild_villager_population() -> void:
 	var assigned_workers := _get_assigned_worker_total()
 	var idle_population: int = max(int(governance_state.population) - assigned_workers, 0) if governance_state != null else 0
 	for idle_index in range(idle_population):
-		_spawn_idle_villager(idle_index, wander_bounds.get_center(), wander_bounds)
+		_spawn_fallback_idle_villager(idle_index, wander_bounds)
 
 
 func _sync_villager_population_to_assignments() -> void:
@@ -911,11 +978,90 @@ func _sync_villager_population_to_assignments() -> void:
 func _spawn_additional_idle_villagers(count: int) -> void:
 	if count <= 0:
 		return
-	var wander_bounds := _get_idle_villager_wander_bounds()
-	var anchor_position := wander_bounds.get_center()
+	var default_wander_bounds: Rect2 = _get_idle_villager_wander_bounds()
+	var default_anchor_position: Vector2 = default_wander_bounds.get_center()
+	var castle_spawn_context: Dictionary = _get_initial_castle_villager_spawn_context()
 	var start_index := characters_root.get_child_count()
 	for local_index in range(count):
-		_spawn_idle_villager(start_index + local_index, anchor_position, wander_bounds)
+		var villager_index: int = start_index + local_index
+		var house_spawn_context: Dictionary = _consume_pending_house_villager_spawn_context()
+		if not house_spawn_context.is_empty():
+			_spawn_house_idle_villager(villager_index, house_spawn_context, default_anchor_position, default_wander_bounds)
+		elif _should_spawn_initial_villager_near_castle(villager_index, castle_spawn_context):
+			_spawn_initial_castle_idle_villager(villager_index, castle_spawn_context, default_anchor_position, default_wander_bounds)
+		else:
+			_spawn_fallback_idle_villager(villager_index, default_wander_bounds)
+
+
+func _spawn_fallback_idle_villager(villager_index: int, fallback_wander_bounds: Rect2) -> void:
+	_spawn_idle_villager(villager_index, fallback_wander_bounds.get_center(), fallback_wander_bounds)
+
+
+func _consume_pending_house_villager_spawn_context() -> Dictionary:
+	if pending_house_villager_spawn_contexts.is_empty():
+		return {}
+	var spawn_context: Dictionary = pending_house_villager_spawn_contexts.pop_front()
+	return spawn_context
+
+
+func _spawn_house_idle_villager(villager_index: int, house_spawn_context: Dictionary, default_anchor_position: Vector2, default_wander_bounds: Rect2) -> void:
+	var anchor_position: Vector2 = house_spawn_context.get("anchor_position", default_anchor_position)
+	var wander_bounds: Rect2 = house_spawn_context.get("wander_bounds", default_wander_bounds)
+	_spawn_idle_villager(villager_index, anchor_position, wander_bounds)
+	var villager: Node = characters_root.get_child(characters_root.get_child_count() - 1) if characters_root != null and characters_root.get_child_count() > 0 else null
+	if villager == null or not is_instance_valid(villager):
+		return
+	villager.set_meta("home_building_cell", house_spawn_context.get("house_cell", Vector2i(-1, -1)))
+
+
+func _spawn_idle_villager_for_house(villager_index: int, house_building: RefCounted, default_wander_bounds: Rect2) -> void:
+	if house_building == null:
+		_spawn_fallback_idle_villager(villager_index, default_wander_bounds)
+		return
+	var house_spawn_context: Dictionary = _build_house_villager_spawn_context(house_building)
+	_spawn_house_idle_villager(villager_index, house_spawn_context, default_wander_bounds.get_center(), default_wander_bounds)
+
+
+func _spawn_initial_castle_idle_villager(villager_index: int, castle_spawn_context: Dictionary, default_anchor_position: Vector2, default_wander_bounds: Rect2) -> void:
+	var anchor_position: Vector2 = castle_spawn_context.get("anchor_position", default_anchor_position)
+	var wander_bounds: Rect2 = castle_spawn_context.get("wander_bounds", default_wander_bounds)
+	_spawn_idle_villager(villager_index, anchor_position, wander_bounds)
+	var villager: Node = characters_root.get_child(characters_root.get_child_count() - 1) if characters_root != null and characters_root.get_child_count() > 0 else null
+	if villager == null or not is_instance_valid(villager):
+		return
+	villager.set_meta("wander_rule", "castle_initial_grid")
+	villager.set_meta("castle_cell", castle_spawn_context.get("castle_cell", Vector2i(-1, -1)))
+
+
+func _get_initial_castle_villager_spawn_context() -> Dictionary:
+	if characters_root == null:
+		return {}
+	var castle_building: RefCounted = _find_castle_building()
+	if castle_building == null:
+		return {}
+	var anchor_position: Vector2 = _get_building_route_point_for_root(castle_building, characters_root, HOME_EXIT_OFFSET)
+	var wander_bounds: Rect2 = Rect2(anchor_position - CASTLE_INITIAL_VILLAGER_WANDER_BOUNDS_SIZE * 0.5, CASTLE_INITIAL_VILLAGER_WANDER_BOUNDS_SIZE)
+	return {
+		"anchor_position": anchor_position,
+		"wander_bounds": wander_bounds,
+		"castle_cell": castle_building.position,
+	}
+
+
+func _build_house_villager_spawn_context(house_building: RefCounted) -> Dictionary:
+	if house_building == null or characters_root == null:
+		return {}
+	var anchor_position: Vector2 = _get_building_route_point_for_root(house_building, characters_root, HOME_EXIT_OFFSET)
+	var wander_bounds: Rect2 = Rect2(anchor_position - CASTLE_INITIAL_VILLAGER_WANDER_BOUNDS_SIZE * 0.5, CASTLE_INITIAL_VILLAGER_WANDER_BOUNDS_SIZE)
+	return {
+		"anchor_position": anchor_position,
+		"wander_bounds": wander_bounds,
+		"house_cell": house_building.position,
+	}
+
+
+func _should_spawn_initial_villager_near_castle(villager_index: int, castle_spawn_context: Dictionary) -> bool:
+	return villager_index < INITIAL_POPULATION and not castle_spawn_context.is_empty()
 
 
 func _remove_excess_villagers(count: int) -> void:
@@ -1028,19 +1174,69 @@ func _assign_villager_to_building(villager: Node2D, building: RefCounted, home_p
 		return
 	var work_position := _get_building_route_point_for_root(building, characters_root, WORK_ENTRY_OFFSET)
 	if villager.has_method("retarget_to_work"):
-		villager.call("retarget_to_work", home_position, work_position)
+		villager.call("retarget_to_work", home_position, work_position, Callable(self, "_build_villager_route_points"))
 	villager_assignments[villager] = building
 	villager_states[villager] = villager.call("get_state_name") if villager.has_method("get_state_name") else &"unknown"
+	_start_or_clear_worker_resource_task(villager, building)
 
 
 func _assign_villager_to_idle(villager: Node2D, wander_bounds: Rect2) -> void:
 	if villager == null or not is_instance_valid(villager):
 		return
-	var anchor_position := wander_bounds.get_center()
+	_clear_worker_resource_task(villager)
+	var wander_context: Dictionary = _get_villager_idle_wander_context(villager, wander_bounds)
+	var anchor_position: Vector2 = wander_context.get("anchor_position", wander_bounds.get_center())
+	var next_wander_bounds: Rect2 = wander_context.get("wander_bounds", wander_bounds)
 	if villager.has_method("retarget_to_idle"):
-		villager.call("retarget_to_idle", anchor_position, wander_bounds, IDLE_VILLAGER_WANDER_RADIUS)
+		villager.call(
+			"retarget_to_idle",
+			anchor_position,
+			next_wander_bounds,
+			IDLE_VILLAGER_WANDER_RADIUS,
+			Callable(self, "_build_villager_route_points"),
+			Callable(self, "_pick_villager_wander_target_position")
+		)
 	villager_assignments[villager] = null
 	villager_states[villager] = villager.call("get_state_name") if villager.has_method("get_state_name") else &"unknown"
+
+
+func _get_villager_idle_wander_context(villager: Node2D, fallback_wander_bounds: Rect2) -> Dictionary:
+	if villager == null or not is_instance_valid(villager):
+		return _build_wander_context_from_bounds(fallback_wander_bounds)
+	var home_cell_variant: Variant = villager.get_meta("home_building_cell", Vector2i(-1, -1))
+	if typeof(home_cell_variant) == TYPE_VECTOR2I:
+		var home_cell: Vector2i = home_cell_variant
+		var home_building: RefCounted = _find_building_at_cell(MapTypes.BuildingType.HOUSE, home_cell)
+		if home_building != null:
+			return _build_wander_context_for_building(home_building)
+	if str(villager.get_meta("wander_rule", "")) == "castle_initial_grid":
+		var castle_cell_variant: Variant = villager.get_meta("castle_cell", Vector2i(-1, -1))
+		if typeof(castle_cell_variant) == TYPE_VECTOR2I:
+			var castle_building: RefCounted = _find_building_at_cell(MapTypes.BuildingType.TOWN_CENTER, castle_cell_variant)
+			if castle_building != null:
+				return _build_wander_context_for_building(castle_building)
+		var fallback_castle: RefCounted = _find_castle_building()
+		if fallback_castle != null:
+			return _build_wander_context_for_building(fallback_castle)
+	return _build_wander_context_from_bounds(fallback_wander_bounds)
+
+
+func _build_wander_context_for_building(building: RefCounted) -> Dictionary:
+	if building == null or characters_root == null:
+		return _build_wander_context_from_bounds(_get_idle_villager_wander_bounds())
+	var anchor_position: Vector2 = _get_building_route_point_for_root(building, characters_root, HOME_EXIT_OFFSET)
+	var wander_bounds: Rect2 = Rect2(anchor_position - CASTLE_INITIAL_VILLAGER_WANDER_BOUNDS_SIZE * 0.5, CASTLE_INITIAL_VILLAGER_WANDER_BOUNDS_SIZE)
+	return {
+		"anchor_position": anchor_position,
+		"wander_bounds": wander_bounds,
+	}
+
+
+func _build_wander_context_from_bounds(wander_bounds: Rect2) -> Dictionary:
+	return {
+		"anchor_position": wander_bounds.get_center(),
+		"wander_bounds": wander_bounds,
+	}
 
 
 func _unregister_villager(villager: Node2D) -> void:
@@ -1048,6 +1244,7 @@ func _unregister_villager(villager: Node2D) -> void:
 		return
 	villager_assignments.erase(villager)
 	villager_states.erase(villager)
+	worker_resource_tasks.erase(villager)
 
 
 func _get_assigned_worker_total() -> int:
@@ -1101,6 +1298,727 @@ func _get_traveling_workers_for_building(building: RefCounted) -> int:
 	return traveling_workers
 
 
+func _start_or_clear_worker_resource_task(villager: Node2D, building: RefCounted) -> void:
+	if not _should_create_worker_resource_task_for_building(building):
+		_clear_worker_resource_task(villager)
+		return
+	var target: Dictionary = _find_resource_collection_target_for_building(building, villager)
+	if not bool(target.get("ok", false)):
+		worker_resource_tasks[villager] = _build_failed_worker_resource_task(villager, building, str(target.get("reason", "无法找到资源采集目标。")))
+		_update_worker_resource_task_visual_status(villager, worker_resource_tasks[villager])
+		return
+	var task: Dictionary = _build_worker_resource_task(villager, building, target)
+	worker_resource_tasks[villager] = task
+	_retarget_villager_to_resource_task(villager, task)
+
+
+func _should_create_worker_resource_task_for_building(building: RefCounted) -> bool:
+	if building == null:
+		return false
+	var resource_type: StringName = MapTypes.get_resource_name_for_building(int(building.building_type))
+	return _is_depletable_resource_type(resource_type)
+
+
+func _build_worker_resource_task(villager: Node2D, building: RefCounted, target: Dictionary) -> Dictionary:
+	var target_work_cell: Vector2i = target.get("work_cell", Vector2i(-1, -1))
+	var target_work_position: Vector2 = _get_resource_collection_work_position(target_work_cell)
+	var building_delivery_position: Vector2 = _get_resource_collection_building_delivery_position(building)
+	var collect_required_minutes: float = _get_resource_task_collect_required_minutes(building)
+	return {
+		"worker_node": villager,
+		"building": building,
+		"resource_type": StringName(str(target.get("resource_type", &""))),
+		"target_resource_cell": target.get("resource_cell", Vector2i(-1, -1)),
+		"target_work_cell": target_work_cell,
+		"target_work_position": target_work_position,
+		"building_delivery_position": building_delivery_position,
+		"state": RESOURCE_TASK_GOING_TO_RESOURCE,
+		"collect_elapsed_seconds": 0.0,
+		"collect_required_seconds": collect_required_minutes,
+		"collect_elapsed_minutes": 0.0,
+		"collect_required_minutes": collect_required_minutes,
+		"carried_amount": 0.0,
+		"carry_amount_per_trip": RESOURCE_TASK_CARRY_AMOUNT,
+		"delivered_amount": 0.0,
+		"shift_elapsed_minutes": 0.0,
+		"shift_required_minutes": RESOURCE_TASK_DEFAULT_SHIFT_MINUTES,
+		"pending_rest_after_delivery": false,
+		"shift_resting": false,
+		"failure_reason": "",
+	}
+
+
+func _build_failed_worker_resource_task(villager: Node2D, building: RefCounted, reason: String) -> Dictionary:
+	return {
+		"worker_node": villager,
+		"building": building,
+		"resource_type": MapTypes.get_resource_name_for_building(int(building.building_type)) if building != null else &"",
+		"target_resource_cell": Vector2i(-1, -1),
+		"target_work_cell": Vector2i(-1, -1),
+		"target_work_position": Vector2.ZERO,
+		"building_delivery_position": Vector2.ZERO,
+		"state": RESOURCE_TASK_FAILED,
+		"collect_elapsed_seconds": 0.0,
+		"collect_required_seconds": 0.0,
+		"collect_elapsed_minutes": 0.0,
+		"collect_required_minutes": 0.0,
+		"carried_amount": 0.0,
+		"carry_amount_per_trip": 0.0,
+		"delivered_amount": 0.0,
+		"shift_elapsed_minutes": 0.0,
+		"shift_required_minutes": RESOURCE_TASK_DEFAULT_SHIFT_MINUTES,
+		"pending_rest_after_delivery": false,
+		"shift_resting": false,
+		"failure_reason": reason,
+	}
+
+
+func _clear_worker_resource_task(villager: Node2D) -> void:
+	if villager == null:
+		return
+	worker_resource_tasks.erase(villager)
+	_clear_worker_resource_task_visual_status(villager)
+
+
+func _retarget_villager_to_resource_task(villager: Node2D, task: Dictionary) -> void:
+	if villager == null or not is_instance_valid(villager):
+		return
+	_update_villager_resource_task_targets(villager, task, true)
+	villager_states[villager] = villager.call("get_state_name") if villager.has_method("get_state_name") else &"unknown"
+	_sync_worker_resource_task_state(villager)
+
+
+func _update_villager_resource_task_targets(villager: Node2D, task: Dictionary, restart_cycle: bool) -> void:
+	if villager == null or not is_instance_valid(villager):
+		return
+	if villager.has_method("set_work_duration_minutes"):
+		villager.call("set_work_duration_minutes", float(task.get("collect_required_minutes", 0.0)))
+	var building_delivery_position: Vector2 = task.get("building_delivery_position", Vector2.ZERO)
+	var target_work_position: Vector2 = task.get("target_work_position", Vector2.ZERO)
+	if not restart_cycle and villager.has_method("update_work_cycle_targets"):
+		villager.call("update_work_cycle_targets", building_delivery_position, target_work_position, Callable(self, "_build_villager_route_points"))
+		return
+	if villager.has_method("retarget_to_work"):
+		villager.call("retarget_to_work", building_delivery_position, target_work_position, Callable(self, "_build_villager_route_points"))
+
+
+func _get_resource_task_collect_required_minutes(building: RefCounted) -> float:
+	if building == null or production_calculator == null:
+		return 1.0
+	if not production_calculator.has_method("get_single_worker_output_per_minute"):
+		return 1.0
+	var output_per_minute: float = float(production_calculator.call("get_single_worker_output_per_minute", int(building.building_type)))
+	if output_per_minute <= 0.0:
+		return 1.0
+	return RESOURCE_TASK_CARRY_AMOUNT / output_per_minute
+
+
+func _ensure_worker_resource_task_shift_fields(task: Dictionary) -> Dictionary:
+	if not task.has("shift_elapsed_minutes"):
+		task["shift_elapsed_minutes"] = 0.0
+	if not task.has("shift_required_minutes"):
+		task["shift_required_minutes"] = RESOURCE_TASK_DEFAULT_SHIFT_MINUTES
+	if not task.has("pending_rest_after_delivery"):
+		task["pending_rest_after_delivery"] = false
+	if not task.has("shift_resting"):
+		task["shift_resting"] = false
+	return task
+
+
+func _is_worker_resource_task_shift_active_state(task_state: StringName) -> bool:
+	return task_state == RESOURCE_TASK_GOING_TO_RESOURCE \
+		or task_state == RESOURCE_TASK_COLLECTING \
+		or task_state == RESOURCE_TASK_RETURNING_TO_BUILDING \
+		or task_state == RESOURCE_TASK_DELIVERING
+
+
+func _advance_worker_resource_task_shift(villager: Node2D, task: Dictionary, delta_game_minutes: float) -> Dictionary:
+	if delta_game_minutes <= 0.0 or bool(task.get("shift_resting", false)):
+		return task
+	if bool(task.get("pending_rest_after_delivery", false)):
+		return task
+	var task_state: StringName = StringName(str(task.get("state", RESOURCE_TASK_IDLE)))
+	if not _is_worker_resource_task_shift_active_state(task_state):
+		return task
+	var shift_required_minutes: float = max(float(task.get("shift_required_minutes", RESOURCE_TASK_DEFAULT_SHIFT_MINUTES)), 0.0)
+	if shift_required_minutes <= 0.0:
+		return task
+	var shift_elapsed_minutes: float = max(float(task.get("shift_elapsed_minutes", 0.0)), 0.0)
+	shift_elapsed_minutes = minf(shift_elapsed_minutes + delta_game_minutes, shift_required_minutes)
+	task["shift_elapsed_minutes"] = shift_elapsed_minutes
+	if shift_elapsed_minutes < shift_required_minutes:
+		return task
+	task["pending_rest_after_delivery"] = true
+	if task_state == RESOURCE_TASK_GOING_TO_RESOURCE or task_state == RESOURCE_TASK_COLLECTING:
+		task["state"] = RESOURCE_TASK_RETURNING_TO_BUILDING
+		_request_villager_return_to_building(villager)
+	return task
+
+
+func _should_worker_resource_task_rest_after_trip(task: Dictionary) -> bool:
+	if bool(task.get("pending_rest_after_delivery", false)):
+		return true
+	var shift_required_minutes: float = max(float(task.get("shift_required_minutes", RESOURCE_TASK_DEFAULT_SHIFT_MINUTES)), 0.0)
+	if shift_required_minutes <= 0.0:
+		return false
+	return max(float(task.get("shift_elapsed_minutes", 0.0)), 0.0) >= shift_required_minutes
+
+
+func _finish_worker_resource_task_trip_prepare(villager: Node2D, task: Dictionary, should_rest: bool) -> Dictionary:
+	if should_rest:
+		task["state"] = RESOURCE_TASK_RESTING
+		task["shift_resting"] = true
+		task["pending_rest_after_delivery"] = false
+		_update_villager_resource_task_targets(villager, task, false)
+		return task
+	task["state"] = RESOURCE_TASK_GOING_TO_RESOURCE
+	task["shift_resting"] = false
+	task["pending_rest_after_delivery"] = false
+	_update_villager_resource_task_targets(villager, task, true)
+	return task
+
+
+func _tick_worker_resource_tasks(delta_game_minutes: float) -> void:
+	if delta_game_minutes <= 0.0 or worker_resource_tasks.is_empty():
+		return
+	var villager_keys: Array = worker_resource_tasks.keys()
+	for villager_variant in villager_keys:
+		if not (villager_variant is Node2D):
+			continue
+		var villager := villager_variant as Node2D
+		if villager == null or not is_instance_valid(villager):
+			worker_resource_tasks.erase(villager)
+			continue
+		_tick_worker_resource_task(villager, delta_game_minutes)
+
+
+func _tick_worker_resource_task(villager: Node2D, delta_game_minutes: float) -> void:
+	if not worker_resource_tasks.has(villager):
+		return
+	var task: Dictionary = worker_resource_tasks.get(villager, {})
+	var current_task_state: StringName = StringName(str(task.get("state", RESOURCE_TASK_IDLE)))
+	if current_task_state == RESOURCE_TASK_FAILED:
+		return
+	if current_task_state == RESOURCE_TASK_WAITING_FOR_STORAGE:
+		_tick_worker_resource_waiting_for_storage_task(villager, task)
+		return
+	task = _ensure_worker_resource_task_shift_fields(task)
+	worker_resource_tasks[villager] = task
+	_sync_worker_resource_task_state(villager)
+	task = worker_resource_tasks.get(villager, {})
+	task = _ensure_worker_resource_task_shift_fields(task)
+	task = _advance_worker_resource_task_shift(villager, task, delta_game_minutes)
+	worker_resource_tasks[villager] = task
+	var task_state: StringName = StringName(str(task.get("state", RESOURCE_TASK_IDLE)))
+	if task_state == RESOURCE_TASK_COLLECTING:
+		_tick_worker_resource_collecting_task(villager, task, delta_game_minutes)
+	elif task_state == RESOURCE_TASK_DELIVERING:
+		_try_deliver_worker_resource_task(villager, task)
+
+
+func _tick_worker_resource_waiting_for_storage_task(villager: Node2D, task: Dictionary) -> void:
+	if not _can_worker_resource_task_deliver_to_storage(task):
+		worker_resource_tasks[villager] = task
+		_update_worker_resource_task_visual_status(villager, task)
+		return
+	task["state"] = RESOURCE_TASK_DELIVERING
+	task["failure_reason"] = ""
+	worker_resource_tasks[villager] = task
+	_try_deliver_worker_resource_task(villager, task)
+
+
+func _tick_worker_resource_collecting_task(villager: Node2D, task: Dictionary, delta_game_minutes: float) -> void:
+	var required_minutes: float = max(float(task.get("collect_required_minutes", task.get("collect_required_seconds", 0.0))), 0.0)
+	var elapsed_minutes: float = max(float(task.get("collect_elapsed_minutes", task.get("collect_elapsed_seconds", 0.0))), 0.0)
+	var carry_amount_per_trip: float = max(float(task.get("carry_amount_per_trip", RESOURCE_TASK_CARRY_AMOUNT)), 0.0)
+	var carried_amount: float = max(float(task.get("carried_amount", 0.0)), 0.0)
+	if elapsed_minutes >= required_minutes or carried_amount >= carry_amount_per_trip:
+		return
+	if required_minutes <= 0.0 or carry_amount_per_trip <= 0.0:
+		return
+	var collect_delta_minutes: float = minf(delta_game_minutes, required_minutes - elapsed_minutes)
+	var requested_amount: float = minf((carry_amount_per_trip / required_minutes) * collect_delta_minutes, carry_amount_per_trip - carried_amount)
+	if requested_amount <= 0.0:
+		return
+	var consumed_amount: float = _consume_worker_resource_cell(task, requested_amount)
+	if consumed_amount <= 0.0:
+		_apply_worker_resource_target_depletion(task)
+		if carried_amount <= 0.0:
+			task = _try_switch_empty_worker_to_next_resource_target(villager, task, "采集失败：目标资源格已采空。")
+		else:
+			task["state"] = RESOURCE_TASK_FAILED
+			task["failure_reason"] = "采集失败：目标资源格已采空。"
+		worker_resource_tasks[villager] = task
+		_update_worker_resource_task_visual_status(villager, task)
+		return
+	var actual_collect_delta_minutes: float = collect_delta_minutes * clampf(consumed_amount / requested_amount, 0.0, 1.0)
+	elapsed_minutes = minf(elapsed_minutes + actual_collect_delta_minutes, required_minutes)
+	carried_amount = minf(carried_amount + consumed_amount, carry_amount_per_trip)
+	task["collect_elapsed_minutes"] = elapsed_minutes
+	task["collect_elapsed_seconds"] = elapsed_minutes
+	task["carried_amount"] = carried_amount
+	worker_resource_tasks[villager] = task
+	_apply_worker_resource_target_depletion(task)
+	_update_worker_resource_task_visual_status(villager, task)
+	if _is_worker_resource_target_depleted(task):
+		task["collect_elapsed_minutes"] = required_minutes
+		task["collect_elapsed_seconds"] = required_minutes
+		task["state"] = RESOURCE_TASK_RETURNING_TO_BUILDING
+		worker_resource_tasks[villager] = task
+		_request_villager_return_to_building(villager)
+		_update_worker_resource_task_visual_status(villager, task)
+
+
+func _try_switch_empty_worker_to_next_resource_target(villager: Node2D, task: Dictionary, fallback_reason: String) -> Dictionary:
+	if max(float(task.get("carried_amount", 0.0)), 0.0) > 0.0:
+		task["state"] = RESOURCE_TASK_FAILED
+		task["failure_reason"] = fallback_reason
+		return task
+	var building_variant: Variant = task.get("building", null)
+	if not (building_variant is RefCounted):
+		task["state"] = RESOURCE_TASK_FAILED
+		task["failure_reason"] = "采集失败：缺少建筑数据。"
+		return task
+	var building: RefCounted = building_variant
+	var resource_type: StringName = StringName(str(task.get("resource_type", &"")))
+	var target: Dictionary = _find_resource_collection_target_for_building(building, villager)
+	if not bool(target.get("ok", false)):
+		task["state"] = RESOURCE_TASK_FAILED
+		task["failure_reason"] = fallback_reason
+		var region: RefCounted = _get_resource_region_for_building(building, _get_regions_by_id())
+		_update_building_linked_resource_depleted_status(building, region, resource_type)
+		return task
+	_apply_resource_collection_target_to_task(task, target, building)
+	_reset_worker_resource_task_collection_progress(task)
+	task["state"] = RESOURCE_TASK_GOING_TO_RESOURCE
+	task["failure_reason"] = ""
+	task["pending_rest_after_delivery"] = false
+	task["shift_resting"] = false
+	_update_villager_resource_task_targets(villager, task, true)
+	return task
+
+
+func _limit_worker_resource_collect_amount_by_storage(villager: Node2D, task: Dictionary, requested_amount: float) -> float:
+	if requested_amount <= 0.0:
+		return 0.0
+	var building_variant: Variant = task.get("building", null)
+	if not (building_variant is RefCounted):
+		return requested_amount
+	var resource_type: StringName = StringName(str(task.get("resource_type", &"")))
+	if resource_type == &"":
+		return requested_amount
+	var building: RefCounted = building_variant
+	var available_amount: float = _get_building_available_storage_amount(building, resource_type)
+	if is_inf(available_amount):
+		return requested_amount
+	var reserved_amount: float = _get_reserved_worker_resource_amount_for_building(building, resource_type, villager)
+	var carried_amount: float = max(float(task.get("carried_amount", 0.0)), 0.0)
+	var remaining_available_amount: float = max(available_amount - reserved_amount - carried_amount, 0.0)
+	return minf(requested_amount, remaining_available_amount)
+
+
+func _get_building_available_storage_amount(building: RefCounted, resource_type: StringName) -> float:
+	if building == null or resource_type == &"":
+		return INF
+	if not building.has_method("get_storage_capacity") or not building.has_method("get_stored_amount"):
+		return INF
+	var capacity_amount: float = float(building.call("get_storage_capacity", resource_type))
+	if capacity_amount <= 0.0:
+		return 0.0
+	var stored_amount: float = float(building.call("get_stored_amount", resource_type))
+	return max(capacity_amount - stored_amount, 0.0)
+
+
+func _get_reserved_worker_resource_amount_for_building(building: RefCounted, resource_type: StringName, excluded_villager: Node2D) -> float:
+	var reserved_amount: float = 0.0
+	for task_villager_variant in worker_resource_tasks.keys():
+		if task_villager_variant == excluded_villager:
+			continue
+		var task_variant: Variant = worker_resource_tasks.get(task_villager_variant, {})
+		if typeof(task_variant) != TYPE_DICTIONARY:
+			continue
+		var next_task: Dictionary = task_variant
+		if next_task.get("building", null) != building:
+			continue
+		if StringName(str(next_task.get("resource_type", &""))) != resource_type:
+			continue
+		if StringName(str(next_task.get("state", RESOURCE_TASK_IDLE))) == RESOURCE_TASK_FAILED:
+			continue
+		reserved_amount += max(float(next_task.get("carried_amount", 0.0)), 0.0)
+	return reserved_amount
+
+
+func _consume_worker_resource_cell(task: Dictionary, amount: float) -> float:
+	if amount <= 0.0:
+		return 0.0
+	var resource_cell: Vector2i = task.get("target_resource_cell", Vector2i(-1, -1))
+	if resource_cell.x < 0:
+		return 0.0
+	var resource_type: StringName = StringName(str(task.get("resource_type", &"")))
+	if resource_type == &"":
+		return 0.0
+	if resource_depletion_state == null or not resource_depletion_state.has_method("consume"):
+		return amount
+	return float(resource_depletion_state.call("consume", resource_cell, resource_type, amount))
+
+
+func _apply_worker_resource_target_depletion(task: Dictionary) -> void:
+	var resource_cell: Vector2i = task.get("target_resource_cell", Vector2i(-1, -1))
+	if resource_cell.x < 0:
+		return
+	var resource_type: StringName = StringName(str(task.get("resource_type", &"")))
+	if resource_type == &"" or resource_depletion_state == null or not resource_depletion_state.has_method("is_depleted"):
+		return
+	if not bool(resource_depletion_state.call("is_depleted", resource_cell, resource_type)):
+		return
+	var building_variant: Variant = task.get("building", null)
+	if not (building_variant is RefCounted):
+		return
+	var building: RefCounted = building_variant
+	var region: RefCounted = _get_resource_region_for_building(building, _get_regions_by_id())
+	_apply_depleted_resource_cells_to_grid(region, resource_type)
+
+
+func _is_worker_resource_target_depleted(task: Dictionary) -> bool:
+	var resource_cell: Vector2i = task.get("target_resource_cell", Vector2i(-1, -1))
+	if resource_cell.x < 0:
+		return true
+	var resource_type: StringName = StringName(str(task.get("resource_type", &"")))
+	if resource_type == &"":
+		return true
+	if resource_depletion_state == null or not resource_depletion_state.has_method("is_depleted"):
+		return false
+	return bool(resource_depletion_state.call("is_depleted", resource_cell, resource_type))
+
+
+func _request_villager_return_to_building(villager: Node2D) -> void:
+	if villager == null or not is_instance_valid(villager):
+		return
+	if villager.has_method("force_return_home_from_work"):
+		villager.call("force_return_home_from_work")
+
+
+func _try_deliver_worker_resource_task(villager: Node2D, task: Dictionary) -> void:
+	var carried_amount: float = float(task.get("carried_amount", 0.0))
+	if carried_amount <= 0.0:
+		worker_resource_tasks[villager] = task
+		return
+	var building_variant: Variant = task.get("building", null)
+	if not (building_variant is RefCounted):
+		task["state"] = RESOURCE_TASK_FAILED
+		task["failure_reason"] = "交付失败：缺少建筑数据。"
+		worker_resource_tasks[villager] = task
+		return
+	var building: RefCounted = building_variant
+	var resource_type: StringName = StringName(str(task.get("resource_type", &"")))
+	if resource_type == &"" or not building.has_method("add_to_storage"):
+		task["state"] = RESOURCE_TASK_FAILED
+		task["failure_reason"] = "交付失败：缺少资源类型或库存接口。"
+		worker_resource_tasks[villager] = task
+		return
+	var accepted_amount: float = float(building.call("add_to_storage", resource_type, carried_amount))
+	if accepted_amount <= 0.0:
+		task = _set_worker_resource_task_waiting_for_storage(task)
+		worker_resource_tasks[villager] = task
+		_update_worker_resource_task_visual_status(villager, task)
+		_update_building_visual_for_data(building)
+		return
+	task["carried_amount"] = max(carried_amount - accepted_amount, 0.0)
+	task["delivered_amount"] = float(task.get("delivered_amount", 0.0)) + accepted_amount
+	if float(task.get("carried_amount", 0.0)) <= 0.0:
+		task = _prepare_worker_resource_task_for_next_trip(villager, task, building, resource_type)
+	else:
+		task = _set_worker_resource_task_waiting_for_storage(task)
+	worker_resource_tasks[villager] = task
+	_update_worker_resource_task_visual_status(villager, task)
+	_update_building_visual_for_data(building)
+
+
+func _set_worker_resource_task_waiting_for_storage(task: Dictionary) -> Dictionary:
+	task = _ensure_worker_resource_task_shift_fields(task)
+	task["state"] = RESOURCE_TASK_WAITING_FOR_STORAGE
+	task["failure_reason"] = "等待清空建筑库存。"
+	task["pending_rest_after_delivery"] = false
+	return task
+
+
+func _can_worker_resource_task_deliver_to_storage(task: Dictionary) -> bool:
+	var building_variant: Variant = task.get("building", null)
+	if not (building_variant is RefCounted):
+		return false
+	var resource_type: StringName = StringName(str(task.get("resource_type", &"")))
+	if resource_type == &"":
+		return false
+	var available_amount: float = _get_building_available_storage_amount(building_variant, resource_type)
+	return is_inf(available_amount) or available_amount > 0.0
+
+
+func _prepare_worker_resource_task_for_next_trip(villager: Node2D, task: Dictionary, building: RefCounted, resource_type: StringName) -> Dictionary:
+	task = _ensure_worker_resource_task_shift_fields(task)
+	var should_rest: bool = _should_worker_resource_task_rest_after_trip(task)
+	if _is_worker_resource_target_collectable(task):
+		_reset_worker_resource_task_collection_progress(task)
+		return _finish_worker_resource_task_trip_prepare(villager, task, should_rest)
+	var target: Dictionary = _find_resource_collection_target_for_building(building, villager)
+	if not bool(target.get("ok", false)):
+		task["state"] = RESOURCE_TASK_FAILED
+		task["failure_reason"] = str(target.get("reason", "附近资源已采尽。"))
+		var region: RefCounted = _get_resource_region_for_building(building, _get_regions_by_id())
+		_update_building_linked_resource_depleted_status(building, region, resource_type)
+		return task
+	_apply_resource_collection_target_to_task(task, target, building)
+	_reset_worker_resource_task_collection_progress(task)
+	return _finish_worker_resource_task_trip_prepare(villager, task, should_rest)
+
+
+func _is_worker_resource_target_collectable(task: Dictionary) -> bool:
+	var resource_cell: Vector2i = task.get("target_resource_cell", Vector2i(-1, -1))
+	if resource_cell.x < 0:
+		return false
+	var resource_type: StringName = StringName(str(task.get("resource_type", &"")))
+	var required_terrain: int = _get_required_resource_terrain_for_resource(resource_type)
+	if required_terrain < 0:
+		return false
+	if not _is_collectable_resource_cell(resource_cell, required_terrain, resource_type):
+		return false
+	return _find_resource_collection_work_cell(resource_cell).x >= 0
+
+
+func _apply_resource_collection_target_to_task(task: Dictionary, target: Dictionary, building: RefCounted) -> void:
+	var target_work_cell: Vector2i = target.get("work_cell", Vector2i(-1, -1))
+	task["resource_type"] = StringName(str(target.get("resource_type", task.get("resource_type", &""))))
+	task["target_resource_cell"] = target.get("resource_cell", Vector2i(-1, -1))
+	task["target_work_cell"] = target_work_cell
+	task["target_work_position"] = _get_resource_collection_work_position(target_work_cell)
+	task["building_delivery_position"] = _get_resource_collection_building_delivery_position(building)
+
+
+func _reset_worker_resource_task_collection_progress(task: Dictionary) -> void:
+	task["collect_elapsed_seconds"] = 0.0
+	task["collect_elapsed_minutes"] = 0.0
+	task["carried_amount"] = 0.0
+
+
+func _get_resource_collection_work_position(work_cell: Vector2i) -> Vector2:
+	if work_cell.x < 0:
+		return Vector2.ZERO
+	return _grid_cell_to_root_position(work_cell, characters_root)
+
+
+func _get_resource_collection_building_delivery_position(building: RefCounted) -> Vector2:
+	if building == null:
+		return Vector2.ZERO
+	return _get_building_route_point_for_root(building, characters_root, WORK_ENTRY_OFFSET)
+
+
+func _sync_worker_resource_task_state(villager: Node2D) -> void:
+	if villager == null or not worker_resource_tasks.has(villager):
+		return
+	var task: Dictionary = worker_resource_tasks.get(villager, {})
+	var current_task_state: StringName = StringName(str(task.get("state", RESOURCE_TASK_IDLE)))
+	if current_task_state == RESOURCE_TASK_FAILED:
+		return
+	if current_task_state == RESOURCE_TASK_WAITING_FOR_STORAGE:
+		if _can_worker_resource_task_deliver_to_storage(task):
+			task["state"] = RESOURCE_TASK_DELIVERING
+			task["failure_reason"] = ""
+		else:
+			worker_resource_tasks[villager] = task
+			_update_worker_resource_task_visual_status(villager, task)
+			return
+	task = _ensure_worker_resource_task_shift_fields(task)
+	var villager_cycle_state := _get_villager_work_cycle_state(villager)
+	match villager_cycle_state:
+		&"going_to_work":
+			if bool(task.get("shift_resting", false)):
+				task["shift_resting"] = false
+				task["pending_rest_after_delivery"] = false
+				task["shift_elapsed_minutes"] = 0.0
+			task["state"] = RESOURCE_TASK_GOING_TO_RESOURCE
+		&"working":
+			task["state"] = RESOURCE_TASK_COLLECTING
+		&"returning_home":
+			task["state"] = RESOURCE_TASK_RETURNING_TO_BUILDING
+		&"resting":
+			if max(float(task.get("carried_amount", 0.0)), 0.0) > 0.0:
+				task["state"] = RESOURCE_TASK_DELIVERING
+			else:
+				task["state"] = RESOURCE_TASK_RESTING
+				task["shift_resting"] = true
+				task["pending_rest_after_delivery"] = false
+		_:
+			task["state"] = RESOURCE_TASK_IDLE
+	worker_resource_tasks[villager] = task
+	_update_worker_resource_task_visual_status(villager, task)
+
+
+func _update_worker_resource_task_visual_status(villager: Node2D, task: Dictionary) -> void:
+	if villager == null or not is_instance_valid(villager):
+		return
+	var task_state: StringName = StringName(str(task.get("state", RESOURCE_TASK_IDLE)))
+	var resource_type: StringName = StringName(str(task.get("resource_type", &"")))
+	_update_worker_resource_task_animation_state(villager, task_state, resource_type, task)
+	if not villager.has_method("set_resource_work_status"):
+		return
+	var status_text: String = _get_worker_resource_task_visual_text(task_state, resource_type, task)
+	if status_text.is_empty():
+		_clear_worker_resource_task_visual_status(villager)
+		return
+	villager.call("set_resource_work_status", status_text, _get_worker_resource_task_visual_color(task_state, resource_type))
+
+
+func _update_worker_resource_task_animation_state(villager: Node2D, task_state: StringName, resource_type: StringName, task: Dictionary) -> void:
+	if villager == null or not is_instance_valid(villager) or not villager.has_method("set_resource_task_animation_state"):
+		return
+	var carried_amount: float = max(float(task.get("carried_amount", 0.0)), 0.0)
+	var animation_task_state: StringName = RESOURCE_TASK_DELIVERING if task_state == RESOURCE_TASK_WAITING_FOR_STORAGE else task_state
+	villager.call("set_resource_task_animation_state", animation_task_state, resource_type, carried_amount)
+	if villager.has_method("set_resource_task_animation_facing_override"):
+		var facing_data: Dictionary = _get_worker_resource_collect_facing_override(task_state, task)
+		villager.call(
+			"set_resource_task_animation_facing_override",
+			bool(facing_data.get("has_override", false)),
+			bool(facing_data.get("facing_left", false))
+		)
+
+
+func _get_worker_resource_collect_facing_override(task_state: StringName, task: Dictionary) -> Dictionary:
+	if task_state != RESOURCE_TASK_COLLECTING:
+		return {"has_override": false, "facing_left": false}
+	var resource_cell: Vector2i = task.get("target_resource_cell", Vector2i(-1, -1))
+	var work_cell: Vector2i = task.get("target_work_cell", Vector2i(-1, -1))
+	if resource_cell.x < 0 or work_cell.x < 0:
+		return {"has_override": false, "facing_left": false}
+	if resource_cell.x == work_cell.x:
+		return {"has_override": false, "facing_left": false}
+	return {"has_override": true, "facing_left": resource_cell.x < work_cell.x}
+
+
+func _clear_worker_resource_task_visual_status(villager: Node2D) -> void:
+	if villager == null or not is_instance_valid(villager):
+		return
+	if villager.has_method("clear_resource_task_animation_state"):
+		villager.call("clear_resource_task_animation_state")
+	if villager.has_method("clear_resource_work_status"):
+		villager.call("clear_resource_work_status")
+
+
+func _get_worker_resource_task_visual_text(task_state: StringName, resource_type: StringName, task: Dictionary) -> String:
+	match task_state:
+		RESOURCE_TASK_COLLECTING:
+			var progress_percent: int = _get_worker_resource_task_collect_progress_percent(task)
+			if resource_type == MapTypes.RESOURCE_WOOD:
+				return "砍木 %d%%" % progress_percent
+			if resource_type == MapTypes.RESOURCE_STONE:
+				return "采石 %d%%" % progress_percent
+			return "采集 %d%%" % progress_percent
+		RESOURCE_TASK_RETURNING_TO_BUILDING:
+			var carried_amount: float = float(task.get("carried_amount", 0.0))
+			if carried_amount <= 0.0:
+				return "返回"
+			if resource_type == MapTypes.RESOURCE_WOOD:
+				return "运木 %.1f" % carried_amount
+			if resource_type == MapTypes.RESOURCE_STONE:
+				return "运石 %.1f" % carried_amount
+			return "运送 %.1f" % carried_amount
+		RESOURCE_TASK_GOING_TO_RESOURCE:
+			if resource_type == MapTypes.RESOURCE_WOOD:
+				return "去森林"
+			if resource_type == MapTypes.RESOURCE_STONE:
+				return "去石材"
+			return "前往资源"
+		RESOURCE_TASK_RESTING:
+			return "休息"
+		RESOURCE_TASK_WAITING_FOR_STORAGE:
+			var waiting_carried_amount: float = float(task.get("carried_amount", 0.0))
+			if waiting_carried_amount > 0.0:
+				return "等清库存 %.1f" % waiting_carried_amount
+			return "等清库存"
+		RESOURCE_TASK_FAILED:
+			return _get_worker_resource_task_failure_display_text(task)
+		_:
+			return ""
+
+
+func _get_worker_resource_task_failure_display_text(task: Dictionary) -> String:
+	var failure_reason: String = str(task.get("failure_reason", ""))
+	if failure_reason.contains("库存已满"):
+		return "库存已满"
+	if failure_reason.contains("没有可到达工作格") or failure_reason.contains("没有可达"):
+		return "无可达资源"
+	if failure_reason.contains("没有可采集资源格") or failure_reason.contains("附近资源已采尽") or failure_reason.contains("目标资源格已采空"):
+		return "资源采尽"
+	if failure_reason.contains("没有绑定") or failure_reason.contains("绑定资源区域"):
+		return "未绑定资源"
+	if failure_reason.contains("缺少建筑") or failure_reason.contains("缺少资源类型") or failure_reason.contains("库存接口"):
+		return "任务异常"
+	return "资源停止"
+
+
+func _get_worker_resource_task_collect_progress_percent(task: Dictionary) -> int:
+	var carry_amount_per_trip: float = max(float(task.get("carry_amount_per_trip", RESOURCE_TASK_CARRY_AMOUNT)), 0.001)
+	var carried_amount: float = max(float(task.get("carried_amount", 0.0)), 0.0)
+	return clampi(int(round((carried_amount / carry_amount_per_trip) * 100.0)), 0, 100)
+
+
+func _get_worker_resource_task_visual_color(task_state: StringName, resource_type: StringName) -> Color:
+	match task_state:
+		RESOURCE_TASK_COLLECTING:
+			if resource_type == MapTypes.RESOURCE_WOOD:
+				return Color(0.72, 1.0, 0.52, 1.0)
+			if resource_type == MapTypes.RESOURCE_STONE:
+				return Color(0.82, 0.88, 1.0, 1.0)
+			return Color(0.90, 1.0, 0.78, 1.0)
+		RESOURCE_TASK_RETURNING_TO_BUILDING:
+			return Color(1.0, 0.90, 0.55, 1.0)
+		RESOURCE_TASK_RESTING:
+			return Color(0.75, 0.88, 1.0, 1.0)
+		RESOURCE_TASK_WAITING_FOR_STORAGE:
+			return Color(1.0, 0.78, 0.25, 1.0)
+		RESOURCE_TASK_FAILED:
+			return Color(1.0, 0.55, 0.55, 1.0)
+		_:
+			return Color(1.0, 0.95, 0.70, 1.0)
+
+
+func _get_villager_work_cycle_state(villager: Node2D) -> StringName:
+	if villager == null or not is_instance_valid(villager):
+		return &"unknown"
+	if villager.has_method("get_work_cycle_state_name"):
+		return StringName(str(villager.call("get_work_cycle_state_name")))
+	if villager.has_method("get_state_name"):
+		return StringName(str(villager.call("get_state_name")))
+	return &"unknown"
+
+
+func _get_worker_resource_tasks_for_building(building: RefCounted) -> Array:
+	var result: Array = []
+	if building == null:
+		return result
+	for task_variant in worker_resource_tasks.values():
+		if typeof(task_variant) != TYPE_DICTIONARY:
+			continue
+		var task: Dictionary = task_variant
+		if task.get("building", null) == building:
+			result.append(task.duplicate())
+	return result
+
+
+func _has_active_worker_resource_tasks_for_building(building: RefCounted) -> bool:
+	if building == null:
+		return false
+	for task_variant in worker_resource_tasks.values():
+		if typeof(task_variant) != TYPE_DICTIONARY:
+			continue
+		var task: Dictionary = task_variant
+		if task.get("building", null) != building:
+			continue
+		var state := StringName(str(task.get("state", RESOURCE_TASK_IDLE)))
+		if state != RESOURCE_TASK_FAILED:
+			return true
+	return false
+
+
 func _get_idle_villager_wander_bounds() -> Rect2:
 	if map_read_result.is_empty():
 		return Rect2(Vector2.ZERO, Vector2(1024, 768))
@@ -1114,6 +2032,325 @@ func _get_idle_villager_wander_bounds() -> Rect2:
 	var min_corner := Vector2(minf(top_left_world.x, bottom_right_world.x), minf(top_left_world.y, bottom_right_world.y))
 	var max_corner := Vector2(maxf(top_left_world.x, bottom_right_world.x), maxf(top_left_world.y, bottom_right_world.y))
 	return Rect2(min_corner, max_corner - min_corner)
+
+
+func _get_villager_navigation_terrain(cell: Vector2i) -> int:
+	if grid == null:
+		return VILLAGER_NAVIGATION_TERRAIN_MISS
+	if not grid.is_inside(cell):
+		return VILLAGER_NAVIGATION_TERRAIN_MISS
+	return int(grid.get_terrain(cell))
+
+
+func _is_villager_walkable_cell(cell: Vector2i) -> bool:
+	if grid == null or not grid.is_inside(cell):
+		return false
+	return not grid.get_blocks_movement(cell)
+
+
+func _root_position_to_grid_cell(root_position: Vector2, target_root: Node2D) -> Vector2i:
+	if ground_layer == null or target_root == null:
+		return Vector2i.ZERO
+	var global_position: Vector2 = target_root.to_global(root_position)
+	var local_position: Vector2 = ground_layer.to_local(global_position)
+	var map_cell: Vector2i = ground_layer.local_to_map(local_position)
+	return map_cell - (map_read_result.get("cell_offset", Vector2i.ZERO) as Vector2i)
+
+
+func _get_navigation_cell_world_span() -> float:
+	if ground_layer == null:
+		return 16.0
+	var origin: Vector2 = _grid_cell_to_root_position(Vector2i.ZERO, characters_root)
+	var step_x: Vector2 = _grid_cell_to_root_position(Vector2i.RIGHT, characters_root)
+	var step_y: Vector2 = _grid_cell_to_root_position(Vector2i.DOWN, characters_root)
+	var x_span: float = origin.distance_to(step_x)
+	var y_span: float = origin.distance_to(step_y)
+	return maxf(maxf(x_span, y_span), 1.0)
+
+
+func _find_nearest_villager_walkable_cell(origin_cell: Vector2i, max_radius: int = 8) -> Vector2i:
+	if _is_villager_walkable_cell(origin_cell):
+		return origin_cell
+	for radius in range(1, max_radius + 1):
+		for y in range(origin_cell.y - radius, origin_cell.y + radius + 1):
+			for x in range(origin_cell.x - radius, origin_cell.x + radius + 1):
+				if abs(x - origin_cell.x) != radius and abs(y - origin_cell.y) != radius:
+					continue
+				var candidate := Vector2i(x, y)
+				if _is_villager_walkable_cell(candidate):
+					return candidate
+	return Vector2i(-1, -1)
+
+
+func _build_villager_route_points(from_position: Vector2, to_position: Vector2) -> Array[Vector2]:
+	var route_points: Array[Vector2] = []
+	if ground_layer == null or characters_root == null:
+		route_points.append(to_position)
+		return route_points
+
+	var start_cell: Vector2i = _find_nearest_villager_walkable_cell(_root_position_to_grid_cell(from_position, characters_root))
+	var goal_cell: Vector2i = _find_nearest_villager_walkable_cell(_root_position_to_grid_cell(to_position, characters_root))
+	if start_cell.x < 0 or goal_cell.x < 0:
+		return route_points
+
+	var cell_path: Array[Vector2i] = _build_villager_cell_path(start_cell, goal_cell)
+	if cell_path.is_empty():
+		if start_cell == goal_cell:
+			route_points.append(to_position)
+		return route_points
+
+	for cell in cell_path:
+		var cell_position: Vector2 = _grid_cell_to_root_position(cell, characters_root)
+		if cell_position.distance_to(from_position) <= 0.01:
+			continue
+		if not route_points.is_empty() and cell_position.distance_to(route_points[route_points.size() - 1]) <= 0.01:
+			continue
+		route_points.append(cell_position)
+
+	if route_points.is_empty() or route_points[route_points.size() - 1].distance_to(to_position) > 0.01:
+		route_points.append(to_position)
+	return route_points
+
+
+func _build_villager_cell_path(start_cell: Vector2i, goal_cell: Vector2i) -> Array[Vector2i]:
+	if start_cell.x < 0 or goal_cell.x < 0:
+		return []
+	if not _is_villager_walkable_cell(start_cell) or not _is_villager_walkable_cell(goal_cell):
+		return []
+	if start_cell == goal_cell:
+		return [goal_cell]
+
+	var distance: int = _get_manhattan_distance(start_cell, goal_cell)
+	var paddings: Array[int] = [
+		maxi(12, int(ceili(float(distance) * 0.5)) + 8),
+		maxi(24, distance + 12),
+		maxi(48, distance * 2 + 16),
+	]
+	var tried_paddings: Dictionary = {}
+	for padding in paddings:
+		if tried_paddings.has(padding):
+			continue
+		tried_paddings[padding] = true
+		var search_rect := Rect2i(
+			Vector2i(mini(start_cell.x, goal_cell.x) - padding, mini(start_cell.y, goal_cell.y) - padding),
+			Vector2i(abs(start_cell.x - goal_cell.x) + 1 + padding * 2, abs(start_cell.y - goal_cell.y) + 1 + padding * 2)
+		)
+		var path: Array[Vector2i] = _run_villager_a_star(start_cell, goal_cell, search_rect)
+		if not path.is_empty():
+			return path
+	return []
+
+
+func _run_villager_a_star(start_cell: Vector2i, goal_cell: Vector2i, search_rect: Rect2i) -> Array[Vector2i]:
+	var open_set: Array[Vector2i] = [start_cell]
+	var open_lookup: Dictionary = {start_cell: true}
+	var came_from: Dictionary = {}
+	var g_score: Dictionary = {start_cell: 0}
+	var f_score: Dictionary = {start_cell: _get_octile_distance_cost(start_cell, goal_cell)}
+
+	while not open_set.is_empty():
+		var current_index: int = 0
+		var current_cell: Vector2i = open_set[0]
+		var current_score: int = int(f_score.get(current_cell, 2147483647))
+		for candidate_index in range(1, open_set.size()):
+			var candidate_cell: Vector2i = open_set[candidate_index]
+			var candidate_score: int = int(f_score.get(candidate_cell, 2147483647))
+			if candidate_score < current_score:
+				current_index = candidate_index
+				current_cell = candidate_cell
+				current_score = candidate_score
+
+		open_set.remove_at(current_index)
+		open_lookup.erase(current_cell)
+
+		if current_cell == goal_cell:
+			return _reconstruct_villager_cell_path(came_from, current_cell)
+
+		for direction in MapTypes.get_eight_directions():
+			var neighbor: Vector2i = current_cell + direction
+			if not search_rect.has_point(neighbor):
+				continue
+			if not _is_villager_walkable_cell(neighbor):
+				continue
+			if _is_diagonal_direction(direction) and not _can_move_diagonally(current_cell, direction):
+				continue
+			var step_cost: int = _get_direction_step_cost(direction)
+			var tentative_score: int = int(g_score.get(current_cell, 2147483647)) + step_cost
+			var existing_score: int = int(g_score.get(neighbor, 2147483647))
+			if tentative_score >= existing_score:
+				continue
+			came_from[neighbor] = current_cell
+			g_score[neighbor] = tentative_score
+			f_score[neighbor] = tentative_score + _get_octile_distance_cost(neighbor, goal_cell)
+			if not open_lookup.has(neighbor):
+				open_set.append(neighbor)
+				open_lookup[neighbor] = true
+	return []
+
+
+func _reconstruct_villager_cell_path(came_from: Dictionary, current_cell: Vector2i) -> Array[Vector2i]:
+	var reversed_path: Array[Vector2i] = [current_cell]
+	var cursor: Vector2i = current_cell
+	while came_from.has(cursor):
+		cursor = came_from[cursor]
+		reversed_path.append(cursor)
+	reversed_path.reverse()
+	return reversed_path
+
+
+func _get_manhattan_distance(from_cell: Vector2i, to_cell: Vector2i) -> int:
+	return abs(from_cell.x - to_cell.x) + abs(from_cell.y - to_cell.y)
+
+
+func _get_octile_distance_cost(from_cell: Vector2i, to_cell: Vector2i) -> int:
+	var dx: int = abs(from_cell.x - to_cell.x)
+	var dy: int = abs(from_cell.y - to_cell.y)
+	var diagonal_steps: int = mini(dx, dy)
+	var straight_steps: int = maxi(dx, dy) - diagonal_steps
+	return diagonal_steps * 14 + straight_steps * 10
+
+
+func _is_diagonal_direction(direction: Vector2i) -> bool:
+	return direction.x != 0 and direction.y != 0
+
+
+func _get_direction_step_cost(direction: Vector2i) -> int:
+	return 14 if _is_diagonal_direction(direction) else 10
+
+
+func _can_move_diagonally(from_cell: Vector2i, direction: Vector2i) -> bool:
+	var horizontal_neighbor := from_cell + Vector2i(direction.x, 0)
+	var vertical_neighbor := from_cell + Vector2i(0, direction.y)
+	return _is_villager_walkable_cell(horizontal_neighbor) and _is_villager_walkable_cell(vertical_neighbor)
+
+
+func _pick_villager_wander_target_position(
+	current_position: Vector2,
+	wander_center: Vector2,
+	wander_radius: float,
+	wander_bounds: Rect2
+) -> Vector2:
+	var castle_grid_target: Variant = _pick_initial_castle_villager_wander_target_position(current_position)
+	if typeof(castle_grid_target) == TYPE_VECTOR2:
+		return castle_grid_target
+	var current_cell: Vector2i = _find_nearest_villager_walkable_cell(_root_position_to_grid_cell(current_position, characters_root))
+	var center_cell: Vector2i = _find_nearest_villager_walkable_cell(_root_position_to_grid_cell(wander_center, characters_root))
+	var cell_span: float = _get_navigation_cell_world_span()
+	var cell_radius: int = maxi(1, int(ceili(wander_radius / maxf(cell_span, 1.0))))
+	var candidates: Array[Vector2i] = []
+
+	for y in range(center_cell.y - cell_radius, center_cell.y + cell_radius + 1):
+		for x in range(center_cell.x - cell_radius, center_cell.x + cell_radius + 1):
+			var candidate_cell: Vector2i = Vector2i(x, y)
+			if not _is_villager_walkable_cell(candidate_cell):
+				continue
+			var candidate_position: Vector2 = _grid_cell_to_root_position(candidate_cell, characters_root)
+			if wander_bounds.size != Vector2.ZERO and not wander_bounds.has_point(candidate_position):
+				continue
+			if candidate_position.distance_to(wander_center) > wander_radius + cell_span * 0.5:
+				continue
+			candidates.append(candidate_cell)
+
+	if candidates.is_empty():
+		if current_cell.x >= 0:
+			return _grid_cell_to_root_position(current_cell, characters_root)
+		return wander_center
+
+	_shuffle_array_in_place(candidates)
+	for candidate_cell in candidates:
+		if candidate_cell == current_cell and candidates.size() > 1:
+			continue
+		return _grid_cell_to_root_position(candidate_cell, characters_root)
+	return _grid_cell_to_root_position(candidates[0], characters_root)
+
+
+func _pick_initial_castle_villager_wander_target_position(current_position: Vector2) -> Variant:
+	var villager: Node = _find_villager_by_root_position(current_position)
+	if villager == null or not is_instance_valid(villager):
+		return null
+	if str(villager.get_meta("wander_rule", "")) != "castle_initial_grid":
+		return null
+	var castle_cell_variant: Variant = villager.get_meta("castle_cell", Vector2i(-1, -1))
+	if typeof(castle_cell_variant) != TYPE_VECTOR2I:
+		return null
+	var castle_cell: Vector2i = castle_cell_variant
+	if castle_cell.x < 0 or castle_cell.y < 0:
+		return null
+	var target_cell: Vector2i = _pick_initial_castle_villager_wander_cell(castle_cell, _root_position_to_grid_cell(current_position, characters_root))
+	if target_cell.x < 0 or target_cell.y < 0:
+		return _get_building_route_point_for_root(_find_castle_building(), characters_root, HOME_EXIT_OFFSET)
+	return _grid_cell_to_root_position(target_cell, characters_root)
+
+
+func _find_villager_by_root_position(root_position: Vector2) -> Node:
+	if characters_root == null:
+		return null
+	for child in characters_root.get_children():
+		var villager: Node2D = child as Node2D
+		if villager == null:
+			continue
+		if villager.position.distance_to(root_position) <= 0.01:
+			return villager
+	return null
+
+
+func _pick_initial_castle_villager_wander_cell(castle_cell: Vector2i, current_cell: Vector2i) -> Vector2i:
+	var candidates: Array[Vector2i] = []
+	var preferred_candidates: Array[Vector2i] = []
+	var start_cell: Vector2i = current_cell
+	if start_cell.x < 0 or not _is_villager_walkable_cell(start_cell):
+		start_cell = _find_nearest_villager_walkable_cell(castle_cell, CASTLE_INITIAL_VILLAGER_WANDER_REACH_RADIUS)
+	if start_cell.x < 0:
+		return Vector2i(-1, -1)
+
+	var visited: Dictionary = {start_cell: true}
+	var queue: Array[Vector2i] = [start_cell]
+	var queue_index: int = 0
+	while queue_index < queue.size():
+		var search_cell: Vector2i = queue[queue_index]
+		queue_index += 1
+		var distance_from_castle: int = _get_chebyshev_distance(search_cell, castle_cell)
+		if distance_from_castle > CASTLE_INITIAL_VILLAGER_WANDER_REACH_RADIUS:
+			continue
+		if not _is_cell_blocked_by_non_castle_building(search_cell, castle_cell):
+			candidates.append(search_cell)
+			if distance_from_castle <= CASTLE_INITIAL_VILLAGER_WANDER_PREFERRED_RADIUS:
+				preferred_candidates.append(search_cell)
+
+		for direction in MapTypes.get_eight_directions():
+			var neighbor_cell: Vector2i = search_cell + direction
+			if visited.has(neighbor_cell):
+				continue
+			if _get_chebyshev_distance(neighbor_cell, castle_cell) > CASTLE_INITIAL_VILLAGER_WANDER_REACH_RADIUS:
+				continue
+			if not _is_villager_walkable_cell(neighbor_cell):
+				continue
+			if _is_diagonal_direction(direction) and not _can_move_diagonally(search_cell, direction):
+				continue
+			visited[neighbor_cell] = true
+			queue.append(neighbor_cell)
+	if candidates.is_empty():
+		return Vector2i(-1, -1)
+	var selectable_candidates: Array[Vector2i] = preferred_candidates if not preferred_candidates.is_empty() else candidates
+	_shuffle_array_in_place(selectable_candidates)
+	for candidate_cell in selectable_candidates:
+		if candidate_cell == current_cell and candidates.size() > 1:
+			continue
+		return candidate_cell
+	return selectable_candidates[0]
+
+
+func _is_cell_blocked_by_non_castle_building(cell: Vector2i, castle_cell: Vector2i) -> bool:
+	if not occupied_cells.has(cell):
+		return false
+	for castle_footprint_cell in BuildingFootprintRulesScript.get_castle_footprint_cells(castle_cell):
+		if castle_footprint_cell == cell:
+			return false
+	return true
+
+
+func _get_chebyshev_distance(a: Vector2i, b: Vector2i) -> int:
+	return maxi(abs(a.x - b.x), abs(a.y - b.y))
 
 
 func _shuffle_array_in_place(values: Array) -> void:
@@ -1156,6 +2393,12 @@ func _setup_placement_ui() -> void:
 		house_button.pressed.connect(_on_placement_button_pressed.bind(MapTypes.BuildingType.HOUSE))
 	if cancel_placement_button != null:
 		cancel_placement_button.pressed.connect(_on_cancel_placement_button_pressed)
+	if harvest_button != null and not harvest_button.pressed.is_connected(_on_harvest_button_pressed):
+		harvest_button.pressed.connect(_on_harvest_button_pressed)
+	if worker_minus_button != null and not worker_minus_button.pressed.is_connected(_on_worker_minus_button_pressed):
+		worker_minus_button.pressed.connect(_on_worker_minus_button_pressed)
+	if worker_plus_button != null and not worker_plus_button.pressed.is_connected(_on_worker_plus_button_pressed):
+		worker_plus_button.pressed.connect(_on_worker_plus_button_pressed)
 	if worker_popup_minus_button != null and not worker_popup_minus_button.pressed.is_connected(_on_worker_minus_button_pressed):
 		worker_popup_minus_button.pressed.connect(_on_worker_minus_button_pressed)
 	if worker_popup_plus_button != null and not worker_popup_plus_button.pressed.is_connected(_on_worker_plus_button_pressed):
@@ -1215,18 +2458,14 @@ func _handle_placement_key(event: InputEventKey) -> void:
 
 func _handle_mouse_button_input(event: InputEventMouseButton) -> void:
 	if event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
+		if _is_screen_position_over_interactive_panel(event.position):
+			return
 		_exit_placement_mode()
+		_clear_selected_building()
 		return
 	if event.button_index == MOUSE_BUTTON_LEFT and event.pressed and placement_mode_active:
 		_try_place_selected_building()
 		return
-	if event.button_index != MOUSE_BUTTON_LEFT or not event.pressed:
-		return
-	if _is_pointer_over_worker_popup():
-		return
-	if hovered_building_node != null and is_instance_valid(hovered_building_node):
-		return
-	_clear_selected_building()
 
 
 func _enter_placement_mode(building_type: int) -> void:
@@ -1282,6 +2521,54 @@ func _update_placement_overlay() -> void:
 	_update_placement_ui()
 
 
+func _update_resource_hover_hint() -> void:
+	if hover_hint_label == null:
+		return
+	if ground_layer == null or grid == null:
+		hover_hint_label.visible = false
+		return
+	if not _is_pointer_inside_game_viewport() or _is_pointer_over_worker_popup():
+		hover_hint_label.visible = false
+		return
+	if hovered_building_node != null and is_instance_valid(hovered_building_node):
+		hover_hint_label.visible = false
+		return
+
+	var next_cell: Vector2i = _get_mouse_grid_cell()
+	var hint_text: String = _get_resource_hover_hint_text(next_cell)
+	if hint_text.is_empty():
+		hover_hint_label.visible = false
+		return
+	hover_hint_label.visible = true
+	hover_hint_label.position = get_global_mouse_position() + Vector2(16, -16)
+	hover_hint_label.text = hint_text
+
+
+func _get_resource_hover_hint_text(cell: Vector2i) -> String:
+	if grid == null or not grid.has_method("is_inside") or not bool(grid.call("is_inside", cell)):
+		return ""
+	var terrain_type: int = int(grid.call("get_terrain", cell))
+	var resource_type: StringName = MapTypes.get_resource_name_for_terrain(terrain_type)
+	if not _is_depletable_resource_type(resource_type):
+		return ""
+	var remaining_amount: float = _get_resource_cell_remaining_amount(cell, resource_type)
+	var default_amount: float = _get_resource_cell_default_amount(resource_type)
+	var resource_label: String = _get_resource_label(resource_type)
+	return "%s资源\n格子：%s\n剩余：%.1f / %.1f" % [resource_label, str(cell), remaining_amount, default_amount]
+
+
+func _get_resource_cell_remaining_amount(cell: Vector2i, resource_type: StringName) -> float:
+	if resource_depletion_state == null or not resource_depletion_state.has_method("get_remaining_amount"):
+		return 0.0
+	return float(resource_depletion_state.call("get_remaining_amount", cell, resource_type))
+
+
+func _get_resource_cell_default_amount(resource_type: StringName) -> float:
+	if resource_depletion_state == null or not resource_depletion_state.has_method("get_default_amount_for_resource"):
+		return 0.0
+	return float(resource_depletion_state.call("get_default_amount_for_resource", resource_type))
+
+
 func _try_place_selected_building() -> void:
 	if placement_controller == null or selected_building_type < 0:
 		return
@@ -1310,18 +2597,30 @@ func _try_place_selected_building() -> void:
 		return
 
 	initial_buildings.append(placed_building)
-	_register_occupied_cell(placed_building.position)
+	_register_occupied_cells_for_building(placed_building)
 	_instantiate_building_visual(placed_building)
+	_clear_building_footprint_resource_visuals(placed_building)
 	last_placement_message = "建造完成：%s，位置 %s" % [placed_building.get_building_label(), str(placed_building.position)]
 	_append_event_log(last_placement_message)
 	if enable_console_debug_logs:
 		print("stage7 placement success | building=", placed_building.get_building_label(), " cell=", placed_building.position)
 	_sync_household_count()
 	if int(placed_building.building_type) == MapTypes.BuildingType.HOUSE and governance_state != null:
+		_queue_house_villager_spawn_contexts(placed_building, HOUSE_POPULATION_CAPACITY)
 		governance_state.set_population(int(governance_state.population) + HOUSE_POPULATION_CAPACITY)
 		_append_event_log("住宅新增人口 +%d" % HOUSE_POPULATION_CAPACITY)
 	_sync_population_dependent_state()
 	_update_placement_hover(true)
+
+
+func _queue_house_villager_spawn_contexts(house_building: RefCounted, count: int) -> void:
+	if house_building == null or count <= 0 or characters_root == null:
+		return
+	var house_spawn_context: Dictionary = _build_house_villager_spawn_context(house_building)
+	if house_spawn_context.is_empty():
+		return
+	for _index in range(count):
+		pending_house_villager_spawn_contexts.append(house_spawn_context.duplicate(true))
 
 
 func debug_stage7_try_place(building_type: int, cell: Vector2i) -> bool:
@@ -1357,14 +2656,66 @@ func _get_placement_hint_text() -> String:
 		return "建筑：%s\n格子：%s\n可放置" % [building_label, str(hovered_cell)]
 	return "建筑：%s\n格子：%s\n不可放置：%s" % [building_label, str(hovered_cell), str(hovered_result.reason)]
 
+func _is_selected_building_town_center() -> bool:
+	if selected_building_data == null:
+		return false
+	return int(selected_building_data.building_type) == MapTypes.BuildingType.TOWN_CENTER
+
+
+func _is_selected_building_manageable_production() -> bool:
+	if selected_building_data == null:
+		return false
+	if not MapTypes.is_production_building(int(selected_building_data.building_type)):
+		return false
+	if not selected_building_data.has_method("has_workers"):
+		return false
+	return bool(selected_building_data.call("has_workers"))
+
+
+func _should_show_placement_panel() -> bool:
+	return placement_mode_active or _is_selected_building_town_center() or _is_selected_building_manageable_production()
+
+
+func _set_placement_buttons_visible(next_visible: bool) -> void:
+	if farm_button != null:
+		farm_button.visible = next_visible
+	if lumber_camp_button != null:
+		lumber_camp_button.visible = next_visible
+	if quarry_button != null:
+		quarry_button.visible = next_visible
+	if house_button != null:
+		house_button.visible = next_visible
+
+
+func _update_shared_building_panel_mode() -> void:
+	var showing_castle_menu := placement_mode_active or _is_selected_building_town_center()
+	var showing_production_menu := not placement_mode_active and _is_selected_building_manageable_production()
+	if placement_panel != null:
+		placement_panel.visible = showing_castle_menu or showing_production_menu
+	_set_placement_buttons_visible(showing_castle_menu)
+	if cancel_placement_button != null:
+		cancel_placement_button.visible = showing_castle_menu
+	if worker_control_panel != null:
+		worker_control_panel.visible = showing_production_menu
+	if harvest_button != null:
+		harvest_button.visible = showing_production_menu
+	if placement_status_label != null:
+		placement_status_label.visible = showing_castle_menu or showing_production_menu
+		placement_status_label.custom_minimum_size = Vector2(304, 118) if showing_production_menu else Vector2(304, 42)
+
+
 func _update_placement_ui() -> void:
+	_update_shared_building_panel_mode()
 	_update_placement_button_texts()
 	if cancel_placement_button != null:
 		cancel_placement_button.disabled = not placement_mode_active
 	if placement_status_label != null:
-		placement_status_label.text = _get_placement_status_text()
-	_update_worker_control_ui()
-	_update_economy_ui()
+		if _is_selected_building_manageable_production() and not placement_mode_active:
+			placement_status_label.text = _get_selected_building_management_text()
+		else:
+			placement_status_label.text = _get_placement_status_text()
+	if harvest_button != null:
+		harvest_button.disabled = not _can_harvest_selected_building()
 
 
 func _on_game_minute_changed(total_minutes: int) -> void:
@@ -1474,10 +2825,493 @@ func _apply_minute_building_storage(regions_by_id: Dictionary) -> Dictionary:
 		for resource_type in building_output.keys():
 			if resource_type == MapTypes.RESOURCE_GOLD:
 				continue
-			var accepted_amount: float = building.add_to_storage(resource_type, float(building_output[resource_type]))
-			_add_to_delta(building_delta, resource_type, accepted_amount)
+			var resource_name: StringName = StringName(str(resource_type))
+			var output_amount: float = float(building_output[resource_type])
+			var region: RefCounted = _get_resource_region_for_building(building, regions_by_id)
+			if _is_depletable_resource_type(resource_name):
+				if _has_active_worker_resource_tasks_for_building(building):
+					_update_building_linked_resource_depleted_status(building, region, resource_name)
+					continue
+				_update_building_linked_resource_depleted_status(building, region, resource_name)
+				output_amount = _get_depletion_aware_resource_output_amount(building, region, resource_name, present_workers)
+				output_amount = minf(output_amount, _get_region_remaining_resource_amount(region, resource_name))
+			var accepted_amount: float = building.add_to_storage(resource_name, output_amount)
+			if accepted_amount > 0.0 and _is_depletable_resource_type(resource_name):
+				_consume_region_resource(region, resource_name, accepted_amount)
+				_apply_depleted_resource_cells_to_grid(region, resource_name)
+			_add_to_delta(building_delta, resource_name, accepted_amount)
 		_update_building_visual_for_data(building)
 	return building_delta
+
+
+func _is_depletable_resource_type(resource_type: StringName) -> bool:
+	return resource_type == MapTypes.RESOURCE_WOOD or resource_type == MapTypes.RESOURCE_STONE
+
+
+func _get_resource_region_for_building(building: RefCounted, regions_by_id: Dictionary) -> RefCounted:
+	if building == null:
+		return null
+	var required_terrain: int = _get_required_resource_terrain_for_building(int(building.building_type))
+	if required_terrain < 0:
+		return null
+	var linked_region_id: int = int(building.linked_region_id)
+	if regions_by_id.has(required_terrain):
+		var regions_variant: Variant = regions_by_id.get(required_terrain, {})
+		if typeof(regions_variant) == TYPE_DICTIONARY:
+			var regions_for_terrain: Dictionary = regions_variant
+			if regions_for_terrain.has(linked_region_id):
+				var matched_region_variant: Variant = regions_for_terrain[linked_region_id]
+				if matched_region_variant is RefCounted:
+					return matched_region_variant
+	if regions_by_id.has(linked_region_id):
+		var region_variant: Variant = regions_by_id.get(linked_region_id, null)
+		if region_variant is RefCounted:
+			return region_variant
+	return null
+
+
+func _find_resource_collection_target_for_building(building: RefCounted, excluded_villager: Node2D = null) -> Dictionary:
+	if building == null:
+		return _build_resource_collection_target_failure("缺少建筑数据。")
+	var resource_type: StringName = MapTypes.get_resource_name_for_building(int(building.building_type))
+	if not _is_depletable_resource_type(resource_type):
+		return _build_resource_collection_target_failure("建筑不是可采集资源建筑。")
+	var region: RefCounted = _get_resource_region_for_building(building, _get_regions_by_id())
+	if region == null:
+		return _build_resource_collection_target_failure("建筑没有绑定可用资源区域。")
+	var reserved_resource_cells: Dictionary = _get_reserved_resource_cells_for_building(building, excluded_villager)
+	var resource_cell: Vector2i = _find_collectable_resource_cell_for_region(building, region, resource_type, reserved_resource_cells)
+	if resource_cell.x < 0:
+		return _build_resource_collection_target_failure("绑定资源区域没有未被占用的可采集资源格。")
+	var work_cell: Vector2i = _find_resource_collection_work_cell(resource_cell)
+	if work_cell.x < 0:
+		return _build_resource_collection_target_failure("资源格旁边没有可到达工作格。")
+	return {
+		"ok": true,
+		"reason": "",
+		"building": building,
+		"region": region,
+		"resource_type": resource_type,
+		"resource_cell": resource_cell,
+		"work_cell": work_cell,
+	}
+
+
+func _build_resource_collection_target_failure(reason: String) -> Dictionary:
+	return {
+		"ok": false,
+		"reason": reason,
+		"building": null,
+		"region": null,
+		"resource_type": &"",
+		"resource_cell": Vector2i(-1, -1),
+		"work_cell": Vector2i(-1, -1),
+	}
+
+
+func _get_reserved_resource_cells_for_building(building: RefCounted, excluded_villager: Node2D = null) -> Dictionary:
+	var reserved_resource_cells: Dictionary = {}
+	if building == null:
+		return reserved_resource_cells
+	for villager_variant in worker_resource_tasks.keys():
+		if excluded_villager != null and villager_variant == excluded_villager:
+			continue
+		var task_variant: Variant = worker_resource_tasks.get(villager_variant, {})
+		if typeof(task_variant) != TYPE_DICTIONARY:
+			continue
+		var task: Dictionary = task_variant
+		if task.get("building", null) != building:
+			continue
+		var task_state: StringName = StringName(str(task.get("state", RESOURCE_TASK_IDLE)))
+		if task_state == RESOURCE_TASK_IDLE or task_state == RESOURCE_TASK_FAILED:
+			continue
+		var resource_cell_variant: Variant = task.get("target_resource_cell", Vector2i(-1, -1))
+		if typeof(resource_cell_variant) != TYPE_VECTOR2I:
+			continue
+		var resource_cell: Vector2i = resource_cell_variant
+		if resource_cell.x < 0:
+			continue
+		reserved_resource_cells[resource_cell] = true
+	return reserved_resource_cells
+
+
+func _is_resource_cell_reserved(resource_cell: Vector2i, reserved_resource_cells: Dictionary) -> bool:
+	return not reserved_resource_cells.is_empty() and reserved_resource_cells.has(resource_cell)
+
+
+func _find_collectable_resource_cell_for_region(building: RefCounted, region: RefCounted, resource_type: StringName, reserved_resource_cells: Dictionary = {}) -> Vector2i:
+	if building == null or region == null:
+		return Vector2i(-1, -1)
+	var required_terrain: int = _get_required_resource_terrain_for_resource(resource_type)
+	if required_terrain < 0:
+		return Vector2i(-1, -1)
+	var best_cell: Vector2i = Vector2i(-1, -1)
+	var best_distance: int = 9223372036854775807
+	for cell_variant in _get_region_cells(region):
+		if typeof(cell_variant) != TYPE_VECTOR2I:
+			continue
+		var cell: Vector2i = cell_variant
+		if _is_resource_cell_reserved(cell, reserved_resource_cells):
+			continue
+		if not _is_collectable_resource_cell(cell, required_terrain, resource_type):
+			continue
+		if _find_resource_collection_work_cell(cell).x < 0:
+			continue
+		var distance: int = _get_manhattan_distance(cell, building.position)
+		if distance < best_distance:
+			best_distance = distance
+			best_cell = cell
+	return best_cell
+
+
+func _is_collectable_resource_cell(cell: Vector2i, required_terrain: int, resource_type: StringName) -> bool:
+	if grid == null or not grid.has_method("is_inside") or not bool(grid.call("is_inside", cell)):
+		return false
+	if int(grid.call("get_terrain", cell)) != required_terrain:
+		return false
+	if resource_depletion_state != null and resource_depletion_state.has_method("is_depleted"):
+		if bool(resource_depletion_state.call("is_depleted", cell, resource_type)):
+			return false
+	return true
+
+
+func _find_resource_collection_work_cell(resource_cell: Vector2i) -> Vector2i:
+	var best_cell: Vector2i = Vector2i(-1, -1)
+	var best_distance: int = 9223372036854775807
+	for direction in MapTypes.get_cardinal_directions():
+		var candidate_cell: Vector2i = resource_cell + direction
+		if not _is_valid_resource_collection_work_cell(candidate_cell):
+			continue
+		var distance: int = _get_manhattan_distance(candidate_cell, _get_castle_cell())
+		if distance < best_distance:
+			best_distance = distance
+			best_cell = candidate_cell
+	return best_cell
+
+
+func _is_valid_resource_collection_work_cell(cell: Vector2i) -> bool:
+	if occupied_cells.has(cell):
+		return false
+	return _is_villager_walkable_cell(cell)
+
+
+func _get_required_resource_terrain_for_building(building_type: int) -> int:
+	match building_type:
+		MapTypes.BuildingType.LUMBER_CAMP:
+			return MapTypes.TerrainType.FOREST
+		MapTypes.BuildingType.QUARRY:
+			return MapTypes.TerrainType.STONE
+		_:
+			return -1
+
+
+func _get_required_resource_terrain_for_resource(resource_type: StringName) -> int:
+	match resource_type:
+		MapTypes.RESOURCE_WOOD:
+			return MapTypes.TerrainType.FOREST
+		MapTypes.RESOURCE_STONE:
+			return MapTypes.TerrainType.STONE
+		_:
+			return -1
+
+
+func _get_depletion_aware_resource_output_amount(building: RefCounted, region: RefCounted, resource_type: StringName, present_workers: int) -> float:
+	if building == null or region == null or production_calculator == null:
+		return 0.0
+	var required_terrain: int = _get_required_resource_terrain_for_resource(resource_type)
+	if required_terrain < 0:
+		return 0.0
+	var active_cell_count: int = _get_active_resource_cell_count(region, resource_type)
+	if production_calculator.has_method("get_limited_resource_output_per_minute"):
+		return float(production_calculator.call(
+			"get_limited_resource_output_per_minute",
+			int(building.building_type),
+			required_terrain,
+			active_cell_count,
+			present_workers
+		))
+	return 0.0
+
+
+func _get_active_resource_cell_count(region: RefCounted, resource_type: StringName) -> int:
+	if region == null:
+		return 0
+	var required_terrain: int = _get_required_resource_terrain_for_resource(resource_type)
+	if required_terrain < 0:
+		return 0
+	var cells: Array = _get_region_cells(region)
+	var active_count: int = 0
+	for cell_variant in cells:
+		if typeof(cell_variant) != TYPE_VECTOR2I:
+			continue
+		var cell: Vector2i = cell_variant
+		if resource_depletion_state != null and resource_depletion_state.has_method("is_depleted"):
+			if bool(resource_depletion_state.call("is_depleted", cell, resource_type)):
+				continue
+		if grid != null and grid.has_method("is_inside") and bool(grid.call("is_inside", cell)):
+			if int(grid.call("get_terrain", cell)) != required_terrain:
+				continue
+		active_count += 1
+	return active_count
+
+
+func _get_region_remaining_resource_amount(region: RefCounted, resource_type: StringName) -> float:
+	if region == null or resource_depletion_state == null:
+		return INF
+	if not resource_depletion_state.has_method("get_total_remaining_amount"):
+		return INF
+	var cells: Array = _get_region_cells(region)
+	if cells.is_empty():
+		return 0.0
+	return float(resource_depletion_state.call("get_total_remaining_amount", cells, resource_type))
+
+
+func _consume_region_resource(region: RefCounted, resource_type: StringName, amount: float) -> float:
+	if amount <= 0.0 or region == null or resource_depletion_state == null:
+		return 0.0
+	if not resource_depletion_state.has_method("consume_from_cells"):
+		return 0.0
+	var cells: Array = _get_region_cells(region)
+	if cells.is_empty():
+		return 0.0
+	return float(resource_depletion_state.call("consume_from_cells", cells, resource_type, amount))
+
+
+func _apply_depleted_resource_cells_to_grid(region: RefCounted, resource_type: StringName) -> void:
+	if grid == null or region == null or resource_depletion_state == null:
+		return
+	if not resource_depletion_state.has_method("is_depleted"):
+		return
+	var depleted_cells: Array[Vector2i] = []
+	for cell_variant in _get_region_cells(region):
+		if typeof(cell_variant) != TYPE_VECTOR2I:
+			continue
+		var cell: Vector2i = cell_variant
+		if not bool(resource_depletion_state.call("is_depleted", cell, resource_type)):
+			continue
+		if _apply_depleted_resource_cell_to_grid(cell, resource_type):
+			depleted_cells.append(cell)
+	if depleted_cells.is_empty():
+		return
+	for depleted_cell in depleted_cells:
+		_remove_resource_cell_from_region(region, depleted_cell)
+		_add_depleted_cell_as_region_adjacent_empty_cell(region, depleted_cell)
+	_update_buildings_linked_to_region_resource_status(region, resource_type)
+	if _is_resource_region_empty(region):
+		_append_resource_region_depleted_event(region, resource_type)
+	_invalidate_placement_reachability_cache()
+
+
+func _apply_depleted_resource_cell_to_grid(cell: Vector2i, resource_type: StringName) -> bool:
+	if grid == null:
+		return false
+	if not grid.has_method("is_inside") or not bool(grid.call("is_inside", cell)):
+		return false
+	var required_terrain: int = _get_required_resource_terrain_for_resource(resource_type)
+	if required_terrain < 0:
+		return false
+	var current_terrain: int = int(grid.call("get_terrain", cell))
+	if current_terrain != required_terrain and current_terrain != MapTypes.TerrainType.PLAIN:
+		return false
+	if current_terrain == required_terrain:
+		grid.call("set_terrain", cell, MapTypes.TerrainType.PLAIN)
+		if grid.has_method("set_blocks_movement"):
+			grid.call("set_blocks_movement", cell, false)
+	_refresh_depleted_resource_visual_cell(cell)
+	return true
+
+
+func _apply_restored_resource_depletion_to_world() -> void:
+	if resource_depletion_state == null or not resource_depletion_state.has_method("export_changed_cells"):
+		return
+	var changed_cells_variant: Variant = resource_depletion_state.call("export_changed_cells")
+	if typeof(changed_cells_variant) != TYPE_ARRAY:
+		return
+	var changed_cells: Array = changed_cells_variant
+	var touched_regions: Dictionary = {}
+	var applied_cell_count: int = 0
+	for entry_variant in changed_cells:
+		if typeof(entry_variant) != TYPE_DICTIONARY:
+			continue
+		var entry: Dictionary = entry_variant
+		if not bool(entry.get("depleted", false)):
+			continue
+		var resource_type: StringName = StringName(str(entry.get("resource_type", "")))
+		if not _is_depletable_resource_type(resource_type):
+			continue
+		var cell: Vector2i = Vector2i(int(entry.get("x", 0)), int(entry.get("y", 0)))
+		if not _apply_depleted_resource_cell_to_grid(cell, resource_type):
+			continue
+		applied_cell_count += 1
+		_remove_depleted_resource_cell_from_regions(cell, resource_type, touched_regions)
+	for touched_region_variant in touched_regions.values():
+		if typeof(touched_region_variant) != TYPE_DICTIONARY:
+			continue
+		var touched_region: Dictionary = touched_region_variant
+		var region_variant: Variant = touched_region.get("region", null)
+		if not (region_variant is RefCounted):
+			continue
+		var region: RefCounted = region_variant
+		var region_resource_type: StringName = StringName(str(touched_region.get("resource_type", "")))
+		_update_buildings_linked_to_region_resource_status(region, region_resource_type)
+	if applied_cell_count > 0:
+		_refresh_farmable_regions_after_resource_depletion()
+	if applied_cell_count > 0 or not touched_regions.is_empty():
+		_invalidate_placement_reachability_cache()
+
+
+func _remove_depleted_resource_cell_from_regions(cell: Vector2i, resource_type: StringName, touched_regions: Dictionary) -> void:
+	var required_terrain: int = _get_required_resource_terrain_for_resource(resource_type)
+	if required_terrain < 0:
+		return
+	var regions_variant: Variant = resource_regions.get(required_terrain, [])
+	if typeof(regions_variant) != TYPE_ARRAY:
+		return
+	var regions: Array = regions_variant
+	for region_variant in regions:
+		if not (region_variant is RefCounted):
+			continue
+		var region: RefCounted = region_variant
+		if not _get_region_cells(region).has(cell):
+			continue
+		_remove_resource_cell_from_region(region, cell)
+		_add_depleted_cell_as_region_adjacent_empty_cell(region, cell)
+		var key: String = "%d:%d" % [required_terrain, int(region.get("region_id"))]
+		touched_regions[key] = {
+			"region": region,
+			"resource_type": resource_type,
+		}
+		return
+
+
+func _add_depleted_cell_as_region_adjacent_empty_cell(region: RefCounted, cell: Vector2i) -> void:
+	if region == null:
+		return
+	if region.has_method("is_empty") and bool(region.call("is_empty")):
+		return
+	if region.has_method("add_adjacent_empty_cell"):
+		region.call("add_adjacent_empty_cell", cell)
+
+
+func _refresh_farmable_regions_after_resource_depletion() -> void:
+	if grid == null:
+		return
+	var scanner: ResourceRegionScanner = ResourceRegionScannerScript.new()
+	farmable_regions = scanner.scan_farmable_regions(grid)
+	if placement_controller != null:
+		_setup_placement_controller()
+
+
+func _invalidate_placement_reachability_cache() -> void:
+	if placement_controller != null and placement_controller.has_method("invalidate_reachability_cache"):
+		placement_controller.call("invalidate_reachability_cache")
+
+
+func _remove_resource_cell_from_region(region: RefCounted, cell: Vector2i) -> void:
+	if region == null:
+		return
+	if region.has_method("remove_cell"):
+		region.call("remove_cell", cell)
+		return
+	var cells: Array = _get_region_cells(region)
+	if not cells.has(cell):
+		return
+	cells.erase(cell)
+	region.set("area", cells.size())
+
+
+func _update_buildings_linked_to_region_resource_status(region: RefCounted, resource_type: StringName) -> void:
+	if region == null:
+		return
+	var region_id: int = int(region.get("region_id"))
+	for building in initial_buildings:
+		if building == null:
+			continue
+		if int(building.linked_region_id) != region_id:
+			continue
+		if MapTypes.get_resource_name_for_building(int(building.building_type)) != resource_type:
+			continue
+		_update_building_linked_resource_depleted_status(building, region, resource_type)
+
+
+func _update_building_linked_resource_depleted_status(building: RefCounted, region: RefCounted, resource_type: StringName) -> void:
+	if building == null or not building.has_method("set_linked_resource_depleted"):
+		return
+	var depleted: bool = region == null or _get_active_resource_cell_count(region, resource_type) <= 0
+	building.call("set_linked_resource_depleted", depleted)
+
+
+func _is_resource_region_empty(region: RefCounted) -> bool:
+	if region == null:
+		return true
+	if region.has_method("is_empty"):
+		return bool(region.call("is_empty"))
+	return _get_region_cells(region).is_empty()
+
+
+func _append_resource_region_depleted_event(region: RefCounted, resource_type: StringName) -> void:
+	var resource_label: String = _get_resource_label(resource_type)
+	var region_id: int = -1
+	if region != null:
+		region_id = int(region.get("region_id"))
+	_append_event_log("%s资源区域 #%d 已采尽，绑定建筑将停止产出。" % [resource_label, region_id])
+
+
+func _refresh_depleted_resource_visual_cell(grid_cell: Vector2i) -> void:
+	var map_cell: Vector2i = _grid_cell_to_map_cell(grid_cell)
+	var runtime_view: Variant = _get_semantic_runtime_view_for_visual_refresh()
+	if runtime_view != null and runtime_view.has_method("mark_resource_cell_depleted_for_visuals"):
+		runtime_view.call("mark_resource_cell_depleted_for_visuals", map_cell)
+	_render_plain_ground_visual_cell(map_cell)
+	_clear_resource_visual_cell(map_cell)
+
+
+func _render_plain_ground_visual_cell(map_cell: Vector2i) -> void:
+	if ground_layer == null:
+		return
+	var atlas_coords: Vector2i = TileRenderDefinitionScript.get_base_tile(GeneratedTileDataScript.TERRAIN_PLAIN)
+	if atlas_coords == TileRenderDefinitionScript.INVALID_ATLAS:
+		ground_layer.set_cell(map_cell, -1)
+		return
+	ground_layer.set_cell(map_cell, TileRenderDefinitionScript.TILE_SOURCE_ID, atlas_coords, 0)
+
+
+func _clear_resource_visual_cell(map_cell: Vector2i) -> void:
+	if resource_layer == null:
+		return
+	resource_layer.set_cell(map_cell, -1)
+
+
+func _clear_building_footprint_resource_visuals(building: RefCounted) -> void:
+	if building == null:
+		return
+	var runtime_view: Variant = _get_semantic_runtime_view_for_visual_refresh()
+	for grid_cell in _get_building_footprint_cells(building):
+		var map_cell: Vector2i = _grid_cell_to_map_cell(grid_cell)
+		if runtime_view != null and runtime_view.has_method("mark_resource_cell_depleted_for_visuals"):
+			runtime_view.call("mark_resource_cell_depleted_for_visuals", map_cell)
+		_clear_resource_visual_cell(map_cell)
+
+
+func _grid_cell_to_map_cell(grid_cell: Vector2i) -> Vector2i:
+	var cell_offset: Vector2i = map_read_result.get("cell_offset", Vector2i.ZERO)
+	return grid_cell + cell_offset
+
+
+func _get_semantic_runtime_view_for_visual_refresh() -> Variant:
+	if not has_method("get_semantic_runtime_view"):
+		return null
+	return call("get_semantic_runtime_view")
+
+
+func _get_region_cells(region: RefCounted) -> Array:
+	if region == null:
+		return []
+	var cells_variant: Variant = region.get("cells")
+	if typeof(cells_variant) != TYPE_ARRAY:
+		return []
+	var cells: Array = cells_variant
+	return cells
 
 
 func _build_minute_global_delta() -> Dictionary:
@@ -1600,7 +3434,7 @@ func _get_resource_inventory_text() -> String:
 	var wood := int(float(resources.get(MapTypes.RESOURCE_WOOD, 0.0)))
 	var stone := int(float(resources.get(MapTypes.RESOURCE_STONE, 0.0)))
 	var gold := int(float(resources.get(MapTypes.RESOURCE_GOLD, 0.0)))
-	return "食物 %d / 木材 %d / 石料 %d / 金币 %d" % [food, wood, stone, gold]
+	return "食物 %d / 木头 %d / 石材 %d / 金币 %d" % [food, wood, stone, gold]
 
 
 func _get_resource_inventory_snapshot() -> Dictionary:
@@ -1782,7 +3616,7 @@ func _get_minute_delta_text() -> String:
 	var wood := float(last_minute_delta.get(MapTypes.RESOURCE_WOOD, 0.0))
 	var stone := float(last_minute_delta.get(MapTypes.RESOURCE_STONE, 0.0))
 	var gold := float(last_minute_delta.get(MapTypes.RESOURCE_GOLD, 0.0))
-	return "食物 %+0.2f / 木材 %+0.2f / 石料 %+0.2f / 金币 %+0.2f" % [food, wood, stone, gold]
+	return "食物 %+0.2f / 木头 %+0.2f / 石材 %+0.2f / 金币 %+0.2f" % [food, wood, stone, gold]
 
 
 func _update_placement_button_texts() -> void:
@@ -1818,12 +3652,35 @@ func _register_occupied_cell(cell: Vector2i) -> void:
 	occupied_cells[cell] = true
 
 
+func _register_occupied_cells_for_building(building: RefCounted) -> void:
+	if building == null:
+		return
+	BuildingFootprintRulesScript.register_building_footprint(occupied_cells, int(building.building_type), building.position)
+
+
+func _get_building_footprint_cells(building: RefCounted) -> Array[Vector2i]:
+	if building == null:
+		return []
+	return BuildingFootprintRulesScript.get_building_footprint_cells(int(building.building_type), building.position)
+
+
 func _find_home_building() -> RefCounted:
 	for building in initial_buildings:
 		if int(building.building_type) == MapTypes.BuildingType.HOUSE:
 			return building
+	return _find_castle_building()
+
+
+func _find_castle_building() -> RefCounted:
 	for building in initial_buildings:
-		if int(building.building_type) == MapTypes.BuildingType.TOWN_CENTER:
+		if building != null and int(building.building_type) == MapTypes.BuildingType.TOWN_CENTER:
+			return building
+	return null
+
+
+func _find_building_at_cell(building_type: int, cell: Vector2i) -> RefCounted:
+	for building in initial_buildings:
+		if building != null and int(building.building_type) == building_type and building.position == cell:
 			return building
 	return null
 
@@ -2028,28 +3885,29 @@ func _handle_building_click(building: RefCounted, building_node: Node2D) -> void
 	if building == null:
 		return
 	_set_selected_building(building, building_node)
-	if building.has_claimable_resources():
-		var claimed := _claim_building_storage(building)
-		last_collection_message = _format_claim_message(building, claimed)
-	else:
-		last_collection_message = "%s %s" % [building.get_building_label(), building.get_claim_empty_message()]
+	last_collection_message = "%s 已选中" % building.get_building_label()
 	_append_event_log(last_collection_message)
 	_update_all_building_visual_states()
 	_update_economy_ui()
+	_update_worker_control_ui()
+	_refresh_stage14_hud()
 
 
 func _set_selected_building(building: RefCounted, building_node: Node2D) -> void:
 	selected_building_data = building
 	selected_building_node = building_node
 	_update_worker_control_ui()
+	_update_placement_ui()
 
 
 func _clear_selected_building() -> void:
-	if selected_building_data == null and selected_building_node == null:
-		return
+	var had_selection := selected_building_data != null or selected_building_node != null
 	selected_building_data = null
 	selected_building_node = null
 	_update_worker_control_ui()
+	_update_placement_ui()
+	if not had_selection:
+		return
 	_update_economy_ui()
 	_refresh_stage14_hud()
 
@@ -2063,6 +3921,86 @@ func _claim_building_storage(building: RefCounted) -> Dictionary:
 	return claimed
 
 
+func _can_harvest_selected_building() -> bool:
+	if selected_building_data == null:
+		return false
+	if not selected_building_data.has_method("has_claimable_resources"):
+		return false
+	return bool(selected_building_data.call("has_claimable_resources"))
+
+
+func _on_harvest_button_pressed() -> void:
+	if selected_building_data == null:
+		return
+	var claimed := _claim_building_storage(selected_building_data)
+	last_collection_message = _format_claim_message(selected_building_data, claimed)
+	_append_event_log(last_collection_message)
+	_resume_storage_blocked_worker_tasks_for_building(selected_building_data)
+	_update_all_building_visual_states()
+	_update_placement_ui()
+	_update_worker_control_ui()
+	_update_economy_ui()
+	_refresh_stage14_hud()
+
+
+func _resume_storage_blocked_worker_tasks_for_building(building: RefCounted) -> void:
+	if building == null:
+		return
+	var villager_keys: Array = worker_resource_tasks.keys()
+	for villager_variant in villager_keys:
+		if not (villager_variant is Node2D):
+			continue
+		var villager := villager_variant as Node2D
+		if villager == null or not is_instance_valid(villager):
+			continue
+		var task_variant: Variant = worker_resource_tasks.get(villager, {})
+		if typeof(task_variant) != TYPE_DICTIONARY:
+			continue
+		var task: Dictionary = task_variant
+		if task.get("building", null) != building:
+			continue
+		var task_state: StringName = StringName(str(task.get("state", RESOURCE_TASK_IDLE)))
+		if task_state == RESOURCE_TASK_WAITING_FOR_STORAGE:
+			_resume_waiting_worker_resource_task(villager, task)
+		elif _is_legacy_storage_full_failed_worker_resource_task(task):
+			_resume_legacy_storage_full_failed_worker_resource_task(villager, building, task)
+
+
+func _resume_waiting_worker_resource_task(villager: Node2D, task: Dictionary) -> void:
+	if not _can_worker_resource_task_deliver_to_storage(task):
+		worker_resource_tasks[villager] = task
+		_update_worker_resource_task_visual_status(villager, task)
+		return
+	task["state"] = RESOURCE_TASK_DELIVERING
+	task["failure_reason"] = ""
+	worker_resource_tasks[villager] = task
+	_try_deliver_worker_resource_task(villager, task)
+
+
+func _is_legacy_storage_full_failed_worker_resource_task(task: Dictionary) -> bool:
+	if StringName(str(task.get("state", RESOURCE_TASK_IDLE))) != RESOURCE_TASK_FAILED:
+		return false
+	return str(task.get("failure_reason", "")).contains("库存已满")
+
+
+func _resume_legacy_storage_full_failed_worker_resource_task(villager: Node2D, building: RefCounted, task: Dictionary) -> void:
+	var carried_amount: float = max(float(task.get("carried_amount", 0.0)), 0.0)
+	if carried_amount > 0.0:
+		task["state"] = RESOURCE_TASK_DELIVERING
+		task["failure_reason"] = ""
+		worker_resource_tasks[villager] = task
+		_try_deliver_worker_resource_task(villager, task)
+		return
+	var target: Dictionary = _find_resource_collection_target_for_building(building, villager)
+	if not bool(target.get("ok", false)):
+		worker_resource_tasks[villager] = _build_failed_worker_resource_task(villager, building, str(target.get("reason", "无法找到资源采集目标。")))
+		_update_worker_resource_task_visual_status(villager, worker_resource_tasks[villager])
+		return
+	var restarted_task: Dictionary = _build_worker_resource_task(villager, building, target)
+	worker_resource_tasks[villager] = restarted_task
+	_retarget_villager_to_resource_task(villager, restarted_task)
+
+
 func _format_claim_message(building: RefCounted, claimed: Dictionary) -> String:
 	var parts: Array[String] = []
 	for resource_type in claimed.keys():
@@ -2070,6 +4008,22 @@ func _format_claim_message(building: RefCounted, claimed: Dictionary) -> String:
 	if parts.is_empty():
 		return "%s %s" % [building.get_building_label(), building.get_claim_empty_message()]
 	return "%s 已领取：%s" % [building.get_building_label(), " / ".join(parts)]
+
+
+func _get_selected_building_management_text() -> String:
+	if selected_building_data == null:
+		return ""
+	var parts: Array[String] = [selected_building_data.get_building_label()]
+	if selected_building_data.has_method("get_storage_summary"):
+		parts.append("库存：%s" % selected_building_data.call("get_storage_summary"))
+	if _can_harvest_selected_building():
+		parts.append("可收获")
+	else:
+		parts.append("暂无可收获资源")
+	var resource_remaining_text: String = _get_selected_building_resource_remaining_text(selected_building_data)
+	if not resource_remaining_text.is_empty():
+		parts.append(resource_remaining_text)
+	return "\n".join(parts)
 
 
 func _get_selected_building_text() -> String:
@@ -2086,7 +4040,28 @@ func _get_selected_building_text() -> String:
 		parts.append("到岗：%d" % present_workers)
 		parts.append("休息：%d" % resting_workers)
 	parts.append("库存：%s" % selected_building_data.get_storage_summary())
+	var resource_remaining_text: String = _get_selected_building_resource_remaining_text(selected_building_data)
+	if not resource_remaining_text.is_empty():
+		parts.append(resource_remaining_text)
+	if selected_building_data.has_method("is_linked_resource_depleted") and bool(selected_building_data.call("is_linked_resource_depleted")):
+		parts.append("附近资源已采尽")
 	return " | ".join(parts)
+
+
+func _get_selected_building_resource_remaining_text(building: RefCounted) -> String:
+	if building == null:
+		return ""
+	var resource_type: StringName = MapTypes.get_resource_name_for_building(int(building.building_type))
+	if not _is_depletable_resource_type(resource_type):
+		return ""
+	var region: RefCounted = _get_resource_region_for_building(building, _get_regions_by_id())
+	if region == null:
+		return "绑定资源剩余：%s 0.0（有效格 0）" % _get_resource_label(resource_type)
+	var remaining_amount: float = _get_region_remaining_resource_amount(region, resource_type)
+	if is_inf(remaining_amount):
+		return ""
+	var active_cell_count: int = _get_active_resource_cell_count(region, resource_type)
+	return "绑定资源剩余：%s %.1f（有效格 %d）" % [_get_resource_label(resource_type), remaining_amount, active_cell_count]
 
 
 func _get_collection_message_text() -> String:
@@ -2167,9 +4142,9 @@ func _get_resource_label(resource_type: StringName) -> String:
 		MapTypes.RESOURCE_FOOD:
 			return "食物"
 		MapTypes.RESOURCE_WOOD:
-			return "木材"
+			return "木头"
 		MapTypes.RESOURCE_STONE:
-			return "石料"
+			return "石材"
 		MapTypes.RESOURCE_GOLD:
 			return "金币"
 		_:
@@ -2178,6 +4153,29 @@ func _get_resource_label(resource_type: StringName) -> String:
 
 func debug_stage8_5_apply_minute() -> void:
 	_apply_minute_economy()
+
+
+func debug_resource_collection_target_for_building(building: RefCounted) -> Dictionary:
+	return _find_resource_collection_target_for_building(building)
+
+
+func debug_worker_resource_tasks_for_building(building: RefCounted) -> Array:
+	return _get_worker_resource_tasks_for_building(building)
+
+
+func debug_worker_resource_task_for_villager(villager: Node2D) -> Dictionary:
+	if villager == null or not worker_resource_tasks.has(villager):
+		return {}
+	var task: Dictionary = worker_resource_tasks.get(villager, {})
+	return task.duplicate()
+
+
+func debug_sync_worker_resource_task_state(villager: Node2D) -> void:
+	_sync_worker_resource_task_state(villager)
+
+
+func debug_tick_worker_resource_tasks(delta_game_minutes: float) -> void:
+	_tick_worker_resource_tasks(delta_game_minutes)
 
 
 func debug_stage9_cycle_speed() -> void:
@@ -2337,11 +4335,26 @@ func debug_get_worker_cycle_snapshot(building_type: int) -> Dictionary:
 		"assigned_villagers": _get_villagers_for_building(target_building).size(),
 	}
 
+
+func debug_is_villager_walkable_cell(cell: Vector2i) -> bool:
+	return _is_villager_walkable_cell(cell)
+
+
+func debug_build_villager_cell_path(start_cell: Vector2i, goal_cell: Vector2i) -> Array[Vector2i]:
+	return _build_villager_cell_path(start_cell, goal_cell)
+
+
+func debug_get_villager_grid_cell(villager: Node2D) -> Vector2i:
+	if villager == null:
+		return Vector2i(-1, -1)
+	return _root_position_to_grid_cell(villager.position, characters_root)
+
 func debug_stage8_5_claim_building(building: RefCounted) -> Dictionary:
 	var before_resources: Dictionary = {}
 	if resource_inventory != null and resource_inventory.has_method("get_all_resources"):
 		before_resources = resource_inventory.call("get_all_resources")
-	_handle_building_click(building, _find_building_node(building))
+	_set_selected_building(building, _find_building_node(building))
+	_on_harvest_button_pressed()
 	var after_resources: Dictionary = {}
 	if resource_inventory != null and resource_inventory.has_method("get_all_resources"):
 		after_resources = resource_inventory.call("get_all_resources")
@@ -2506,6 +4519,7 @@ func _get_region_count(regions: Dictionary, terrain_type: int) -> int:
 
 func _on_villager_state_changed(villager: Node2D, state_name: StringName) -> void:
 	villager_states[villager] = state_name
+	_sync_worker_resource_task_state(villager)
 	if state_name == &"resting":
 		call_deferred("_rebalance_villager_assignments")
 	if selected_building_data != null:
@@ -2517,11 +4531,23 @@ func _on_villager_state_changed(villager: Node2D, state_name: StringName) -> voi
 
 
 func _update_worker_control_ui() -> void:
-	var should_show := _should_show_worker_popup()
+	var should_show := not placement_mode_active and _is_selected_building_manageable_production()
 	if worker_control_panel != null:
-		worker_control_panel.visible = false
+		worker_control_panel.visible = should_show
 	if worker_popup_panel != null:
-		worker_popup_panel.visible = should_show
+		worker_popup_panel.visible = false
+	if worker_status_label != null:
+		worker_status_label.visible = true
+		worker_status_label.text = _get_worker_control_status_text()
+	if worker_count_label != null:
+		worker_count_label.visible = true
+		worker_count_label.text = _get_worker_control_count_text()
+	if worker_minus_button != null:
+		worker_minus_button.visible = true
+		worker_minus_button.disabled = not _can_change_selected_building_workers(-1)
+	if worker_plus_button != null:
+		worker_plus_button.visible = true
+		worker_plus_button.disabled = not _can_change_selected_building_workers(1)
 	if worker_popup_status_label != null:
 		worker_popup_status_label.text = _get_worker_control_status_text()
 	if worker_popup_count_label != null:
@@ -2530,7 +4556,8 @@ func _update_worker_control_ui() -> void:
 		worker_popup_minus_button.disabled = not _can_change_selected_building_workers(-1)
 	if worker_popup_plus_button != null:
 		worker_popup_plus_button.disabled = not _can_change_selected_building_workers(1)
-	if should_show:
+	_update_placement_ui()
+	if should_show and worker_popup_panel != null and worker_popup_panel.visible:
 		_position_worker_popup_panel()
 
 
@@ -2611,6 +4638,7 @@ func _adjust_selected_building_workers(delta: int) -> bool:
 	_rebalance_villager_assignments()
 	_update_top_resource_bar()
 	_update_worker_control_ui()
+	_update_placement_ui()
 	_update_economy_ui()
 	_refresh_stage14_hud()
 	return true
@@ -2717,6 +4745,25 @@ func _is_pointer_over_worker_popup() -> bool:
 	if worker_popup_panel == null or not worker_popup_panel.visible:
 		return false
 	return worker_popup_panel.get_global_rect().has_point(get_viewport().get_mouse_position())
+
+
+func _is_screen_position_over_interactive_panel(screen_position: Vector2) -> bool:
+	var panels: Array[Control] = [
+		placement_panel,
+		worker_popup_panel,
+		build_cost_tooltip_panel,
+		top_resource_bar,
+		time_control_panel,
+		tax_panel,
+		happiness_panel,
+		riot_panel,
+		victory_panel,
+		hud_panel,
+	]
+	for panel in panels:
+		if panel != null and panel.visible and panel.get_global_rect().has_point(screen_position):
+			return true
+	return false
 
 
 func debug_stage7_5_select_building(building_type: int) -> bool:

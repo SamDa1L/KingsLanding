@@ -156,9 +156,9 @@ func get_consequence_preview(consequence_id: StringName) -> String:
 		CONSEQUENCE_BURN_FARM:
 			return "一座农场停产，食物产出下降"
 		CONSEQUENCE_DAMAGE_LUMBER_CAMP:
-			return "一座伐木场停产，木材产出下降"
+			return "一座伐木场停产，木头产出下降"
 		CONSEQUENCE_DAMAGE_QUARRY:
-			return "一座采石场停产，石料产出下降"
+			return "一座采石场停产，石材产出下降"
 		CONSEQUENCE_POPULATION_FLEE:
 			return "人口 -%d，税收和劳动力下降" % POPULATION_FLEE_AMOUNT
 		CONSEQUENCE_WAREHOUSE_ROBBERY:

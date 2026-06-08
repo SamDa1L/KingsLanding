@@ -25,6 +25,7 @@ var stored_resources: Dictionary = {}
 var storage_capacity: Dictionary = {}
 var worker_count: int = 0
 var worker_capacity: int = 0
+var linked_resource_depleted: bool = false
 
 
 func _init() -> void:
@@ -44,6 +45,7 @@ func setup(next_building_type: int) -> void:
 	is_active = true
 	worker_count = 0
 	worker_capacity = 0
+	linked_resource_depleted = false
 	_configure_storage_defaults()
 	_configure_worker_defaults()
 	_sync_legacy_storage_values()
@@ -94,6 +96,14 @@ func remove_workers(amount: int) -> int:
 
 func can_accept_more_workers() -> bool:
 	return get_worker_count() < get_worker_capacity()
+
+
+func set_linked_resource_depleted(depleted: bool) -> void:
+	linked_resource_depleted = depleted
+
+
+func is_linked_resource_depleted() -> bool:
+	return linked_resource_depleted
 
 
 func add_to_storage(next_resource_type: StringName, amount: float) -> float:
@@ -162,6 +172,55 @@ func clear_storage() -> void:
 	_sync_legacy_storage_values()
 
 
+func to_save_data() -> Dictionary:
+	return {
+		"building_type": building_type,
+		"position": position,
+		"linked_region_id": linked_region_id,
+		"display_name": display_name,
+		"resource_type": resource_type,
+		"is_active": is_active,
+		"stored_resources": stored_resources.duplicate(true),
+		"storage_capacity": storage_capacity.duplicate(true),
+		"worker_count": worker_count,
+		"worker_capacity": worker_capacity,
+		"linked_resource_depleted": linked_resource_depleted,
+	}
+
+
+func restore_from_save_data(save_data: Dictionary) -> bool:
+	if save_data.is_empty():
+		return false
+	var next_building_type: int = int(save_data.get("building_type", MapTypes.BuildingType.HOUSE))
+	setup(next_building_type)
+
+	var position_value: Variant = save_data.get("position", position)
+	if typeof(position_value) == TYPE_VECTOR2I:
+		position = position_value
+	linked_region_id = int(save_data.get("linked_region_id", linked_region_id))
+	display_name = str(save_data.get("display_name", display_name))
+	var resource_type_value: Variant = save_data.get("resource_type", resource_type)
+	resource_type = StringName(str(resource_type_value))
+	is_active = bool(save_data.get("is_active", is_active))
+
+	var next_storage_capacity: Dictionary = _normalize_resource_amount_dictionary(save_data.get("storage_capacity", storage_capacity), storage_capacity)
+	var next_stored_resources: Dictionary = _normalize_resource_amount_dictionary(save_data.get("stored_resources", stored_resources), stored_resources)
+	storage_capacity = next_storage_capacity
+	stored_resources = next_stored_resources
+	worker_capacity = max(int(save_data.get("worker_capacity", worker_capacity)), 0)
+	worker_count = clampi(int(save_data.get("worker_count", worker_count)), 0, worker_capacity)
+	linked_resource_depleted = bool(save_data.get("linked_resource_depleted", linked_resource_depleted))
+	_sync_legacy_storage_values()
+	return true
+
+
+static func from_save_data(save_data: Dictionary) -> BuildingData:
+	var building := BuildingData.new()
+	if not building.restore_from_save_data(save_data):
+		return null
+	return building
+
+
 func _configure_storage_defaults() -> void:
 	if resource_type == &"":
 		return
@@ -195,13 +254,24 @@ func _sync_legacy_storage_values() -> void:
 	capacity = int(floor(float(storage_capacity.get(resource_type, 0.0))))
 
 
+static func _normalize_resource_amount_dictionary(source_variant: Variant, fallback: Dictionary = {}) -> Dictionary:
+	if typeof(source_variant) != TYPE_DICTIONARY:
+		return fallback.duplicate(true)
+	var source: Dictionary = source_variant
+	var result: Dictionary = {}
+	for resource_type_key in source.keys():
+		var resource_name := StringName(str(resource_type_key))
+		result[resource_name] = max(float(source.get(resource_type_key, 0.0)), 0.0)
+	return result
+
+
 func _get_resource_label(next_resource_type: StringName) -> String:
 	match next_resource_type:
 		&"food":
 			return "食物"
 		&"wood":
-			return "木材"
+			return "木头"
 		&"stone":
-			return "石料"
+			return "石材"
 		_:
 			return "资源"

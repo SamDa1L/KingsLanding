@@ -19,9 +19,15 @@ const FOOD_CONSUMPTION_PER_POPULATION_PER_MINUTE := 1.0 / 1440.0
 func get_region_output_per_minute(region: RefCounted, building_type: int) -> float:
 	if region == null:
 		return 0.0
-	if not _building_matches_region(building_type, region.terrain_type):
+	return get_region_output_per_minute_for_area(int(region.terrain_type), int(region.area), building_type)
+
+
+func get_region_output_per_minute_for_area(terrain_type: int, area: int, building_type: int) -> float:
+	if area <= 0:
 		return 0.0
-	var raw_output := float(region.area) * get_cell_output_per_minute(region.terrain_type)
+	if not _building_matches_region(building_type, terrain_type):
+		return 0.0
+	var raw_output := float(area) * get_cell_output_per_minute(terrain_type)
 	match building_type:
 		MapTypes.BuildingType.LUMBER_CAMP:
 			return clampf(raw_output, MIN_WOOD_PER_MINUTE, MAX_WOOD_PER_MINUTE)
@@ -29,6 +35,18 @@ func get_region_output_per_minute(region: RefCounted, building_type: int) -> flo
 			return clampf(raw_output, MIN_STONE_PER_MINUTE, MAX_STONE_PER_MINUTE)
 		_:
 			return raw_output
+
+
+func get_limited_resource_output_per_minute(building_type: int, terrain_type: int, active_cell_count: int, present_worker_count: int) -> float:
+	if present_worker_count <= 0 or active_cell_count <= 0:
+		return 0.0
+	var region_output: float = get_region_output_per_minute_for_area(terrain_type, active_cell_count, building_type)
+	var worker_output: float = _get_worker_limited_output_per_minute(building_type, present_worker_count)
+	return minf(region_output, worker_output)
+
+
+func get_single_worker_output_per_minute(building_type: int) -> float:
+	return _get_worker_limited_output_per_minute(building_type, 1)
 
 
 func get_building_output_per_minute(building: RefCounted, regions_by_id: Dictionary) -> Dictionary:

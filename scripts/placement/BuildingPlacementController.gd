@@ -4,6 +4,7 @@ extends RefCounted
 const PlacementValidatorScript := preload("res://scripts/placement/PlacementValidator.gd")
 const BuildingDataScript := preload("res://scripts/buildings/BuildingData.gd")
 const MapTypes := preload("res://scripts/map/MapTypes.gd")
+const BuildingFootprintRulesScript := preload("res://scripts/buildings/BuildingFootprintRules.gd")
 
 var validator: RefCounted = null
 var occupied_cells: Dictionary = {}
@@ -50,7 +51,7 @@ func place(building_type: int, cell: Vector2i) -> RefCounted:
 		result.reason = _build_insufficient_cost_text(cost)
 		return result
 
-	occupied_cells[cell] = true
+	BuildingFootprintRulesScript.register_building_footprint(occupied_cells, building_type, cell)
 	var building := BuildingDataScript.new()
 	building.setup(building_type)
 	building.position = cell
@@ -113,9 +114,9 @@ func _get_resource_label(resource_type: StringName) -> String:
 		MapTypes.RESOURCE_FOOD:
 			return "食物"
 		MapTypes.RESOURCE_WOOD:
-			return "木材"
+			return "木头"
 		MapTypes.RESOURCE_STONE:
-			return "石料"
+			return "石材"
 		MapTypes.RESOURCE_GOLD:
 			return "金币"
 		_:

@@ -35,6 +35,7 @@ var _runtime_generator: ResourcePatchGenerator = ResourcePatchGeneratorScript.ne
 var _runtime_semantic_chunks: Dictionary = {}
 var _runtime_rendered_resource_counts: Dictionary = {}
 var _prewarmed_chunk_resource_counts: Dictionary = {}
+var _depleted_resource_visual_overrides: Dictionary = {}
 var _rendered_chunk_coords: Dictionary = {}
 var _runtime_visual_chunk_queue: Array[Vector2i] = []
 var _runtime_visual_chunk_queue_set: Dictionary = {}
@@ -323,6 +324,15 @@ func _reset_visual_state(clear_runtime_cache: bool) -> void:
 		_runtime_generated_chunk_count = 0
 		_runtime_generated_cell_count = 0
 		_runtime_generated_resource_count = 0
+
+
+func mark_resource_cell_depleted_for_visuals(world_cell: Vector2i) -> void:
+	_depleted_resource_visual_overrides[world_cell] = true
+	if ground_layer != null:
+		_render_base_cell(world_cell, WorldSemanticChunkScript.TERRAIN_PLAIN)
+	if resource_layer != null:
+		_render_resource_cell(world_cell, WorldSemanticChunkScript.RESOURCE_NONE)
+	_refresh_transition_cells_near(world_cell)
 
 
 func _rebuild_runtime_cache_metrics() -> void:
@@ -624,6 +634,8 @@ func _render_semantic_chunk_ground(chunk: WorldSemanticChunk, is_runtime_chunk: 
 			var local_index: int = local_y * chunk_width + local_x
 			var world_cell: Vector2i = chunk_origin + Vector2i(local_x, local_y)
 			var terrain_id: int = chunk.get_terrain_id_by_index(local_index)
+			if _depleted_resource_visual_overrides.has(world_cell):
+				terrain_id = WorldSemanticChunkScript.TERRAIN_PLAIN
 
 			_render_base_cell(world_cell, terrain_id)
 			if not is_runtime_chunk:
@@ -640,6 +652,8 @@ func _render_semantic_chunk_resources(chunk: WorldSemanticChunk, is_runtime_chun
 			var local_index: int = local_y * chunk_width + local_x
 			var world_cell: Vector2i = chunk_origin + Vector2i(local_x, local_y)
 			var resource_id: int = chunk.get_base_resource_id_by_index(local_index)
+			if _depleted_resource_visual_overrides.has(world_cell):
+				resource_id = WorldSemanticChunkScript.RESOURCE_NONE
 
 			_render_resource_cell(world_cell, resource_id)
 			if not is_runtime_chunk and resource_id != WorldSemanticChunkScript.RESOURCE_NONE:
@@ -689,6 +703,14 @@ func _render_transition_cell(world_cell: Vector2i) -> void:
 	transition_layer.set_cell(world_cell, TileRenderDefinitionScript.TILE_SOURCE_ID, atlas_coords, 0)
 
 
+func _refresh_transition_cells_near(world_cell: Vector2i) -> void:
+	if transition_layer == null:
+		return
+	_render_transition_cell(world_cell)
+	for direction in CARDINAL_DIRECTIONS:
+		_render_transition_cell(world_cell + direction)
+
+
 func _borrow_semantic_chunk_for_world_cell(world_cell: Vector2i) -> WorldSemanticChunk:
 	if not _initialized:
 		return null
@@ -699,6 +721,8 @@ func _borrow_semantic_chunk_for_world_cell(world_cell: Vector2i) -> WorldSemanti
 
 
 func _lookup_terrain_id(world_cell: Vector2i) -> int:
+	if _depleted_resource_visual_overrides.has(world_cell):
+		return WorldSemanticChunkScript.TERRAIN_PLAIN
 	var chunk: WorldSemanticChunk = _borrow_semantic_chunk_for_world_cell(world_cell)
 	if chunk == null:
 		return WorldSemanticStoreScript.QUERY_MISS
@@ -719,7 +743,8 @@ func _compute_visible_chunk_rect(center_cell: Vector2i) -> Rect2i:
 	var viewport: Viewport = get_viewport()
 	if viewport != null:
 		viewport_size = viewport.get_visible_rect().size
-	var viewport_world_size: Vector2 = viewport_size * main_camera.zoom
+	var safe_zoom: Vector2 = Vector2(maxf(main_camera.zoom.x, 0.001), maxf(main_camera.zoom.y, 0.001))
+	var viewport_world_size: Vector2 = Vector2(viewport_size.x / safe_zoom.x, viewport_size.y / safe_zoom.y)
 	var half_width: int = int(ceili(viewport_world_size.x / _tile_pixel_size.x / 2.0)) + render_padding_cells
 	var half_height: int = int(ceili(viewport_world_size.y / _tile_pixel_size.y / 2.0)) + render_padding_cells
 	var visible_cell_rect := Rect2i(

@@ -25,6 +25,7 @@ enum LoadingState {
 
 @export var world_seed: int = 20260529
 @export var gameplay_scene: PackedScene
+@export_file("*.save") var next_gameplay_semantic_world_save_path: String = ""
 @export var submission_budget_usec: int = 1000
 @export var visual_build_units_per_frame: int = 256
 @export var auto_start: bool = true
@@ -217,6 +218,8 @@ func transition_to_gameplay() -> bool:
 
 	last_gameplay_instance = gameplay_scene.instantiate()
 	if last_gameplay_instance != null:
+		if not next_gameplay_semantic_world_save_path.is_empty():
+			last_gameplay_instance.set("semantic_world_save_path", next_gameplay_semantic_world_save_path)
 		last_gameplay_instance.set("auto_build_full_visuals_on_ready", false)
 	if get_parent() != null:
 		get_parent().add_child(last_gameplay_instance)
@@ -345,6 +348,8 @@ func _begin_visual_build_before_transition() -> void:
 		_update_ui()
 		return
 
+	if not next_gameplay_semantic_world_save_path.is_empty():
+		last_gameplay_instance.set("semantic_world_save_path", next_gameplay_semantic_world_save_path)
 	last_gameplay_instance.set("auto_build_full_visuals_on_ready", false)
 	last_gameplay_instance.set("visual_build_mode", 0)
 	last_gameplay_instance.visible = false

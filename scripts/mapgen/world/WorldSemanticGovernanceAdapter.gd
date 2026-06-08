@@ -66,6 +66,7 @@ func build_governance_bootstrap_context(
 					var grid_cell := world_cell - bootstrap_tile_rect.position
 
 					grid.set_terrain(grid_cell, governance_terrain)
+					grid.set_blocks_movement(grid_cell, _is_governance_terrain_blocked(governance_terrain))
 					terrain_counts[governance_terrain] = int(terrain_counts.get(governance_terrain, 0)) + 1
 					ground_cells_read += 1
 					if resource_id != WorldSemanticChunkScript.RESOURCE_NONE:
@@ -173,3 +174,7 @@ func _create_terrain_counts() -> Dictionary:
 		MapTypes.TerrainType.WATER: 0,
 		MapTypes.TerrainType.MOUNTAIN: 0,
 	}
+
+
+func _is_governance_terrain_blocked(governance_terrain: int) -> bool:
+	return not MapTypes.is_villager_walkable_terrain(governance_terrain)

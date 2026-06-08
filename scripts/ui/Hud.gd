@@ -27,7 +27,7 @@ func set_resources(resources: Dictionary) -> void:
 	var wood := _get_resource_amount(resources, &"wood")
 	var stone := _get_resource_amount(resources, &"stone")
 	var gold := _get_resource_amount(resources, &"gold")
-	resource_label.text = "食物 %d   木材 %d   石料 %d   金币 %d" % [food, wood, stone, gold]
+	resource_label.text = "食物 %d   木头 %d   石材 %d   金币 %d" % [food, wood, stone, gold]
 
 
 func set_villager_counts(counts: Dictionary) -> void:

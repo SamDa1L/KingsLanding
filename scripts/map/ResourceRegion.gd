@@ -36,6 +36,18 @@ func add_cell(cell: Vector2i) -> void:
 	area = cells.size()
 
 
+func remove_cell(cell: Vector2i) -> bool:
+	if not cells.has(cell):
+		return false
+	cells.erase(cell)
+	area = cells.size()
+	return true
+
+
+func is_empty() -> bool:
+	return area <= 0
+
+
 func add_adjacent_empty_cell(cell: Vector2i) -> void:
 	if adjacent_empty_cells.has(cell):
 		return

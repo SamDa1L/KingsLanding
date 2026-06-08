@@ -11,8 +11,8 @@ size = Vector2(48, 32)
 [node name="PlacementAnchor" type="Marker2D" parent="." unique_id=370467922]
 position = Vector2(16, 17)
 
-[node name="VillagerPoint" type="Marker2D" parent="."]
-position = Vector2(16, 30)
+[node name="VillagerPoint" type="Marker2D" parent="." unique_id=165322386]
+position = Vector2(9, 9)
 
 [node name="TileMapLayer" type="TileMapLayer" parent="." unique_id=1748515145]
 tile_map_data = PackedByteArray(0, 0, 0, 0, 0, 0, 0, 0, 10, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 7, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 7, 0, 0, 0, 0, 0)

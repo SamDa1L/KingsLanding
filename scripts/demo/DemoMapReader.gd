@@ -5,6 +5,7 @@ const GridMapDataScript := preload("res://scripts/map/GridMapData.gd")
 
 const TERRAIN_TYPE_FIELD := "terrain_type"
 const RESOURCE_TYPE_FIELD := "resource_type"
+const BLOCKS_MOVEMENT_FIELD := "blocks_movement"
 
 var cell_offset: Vector2i = Vector2i.ZERO
 var used_rect: Rect2i = Rect2i()
@@ -35,13 +36,17 @@ func read_layers(ground_layer: TileMapLayer, resource_layer: TileMapLayer) -> Di
 	grid.fill_terrain(MapTypes.TerrainType.EMPTY)
 
 	for cell in ground_cells:
-		grid.set_terrain(_to_grid_cell(cell), _read_ground_terrain(ground_layer, cell))
+		var grid_cell := _to_grid_cell(cell)
+		grid.set_terrain(grid_cell, _read_ground_terrain(ground_layer, cell))
+		grid.set_blocks_movement(grid_cell, _read_blocks_movement(ground_layer, cell, false))
 		ground_cells_read += 1
 
 	for cell in resource_cells:
 		var resource_terrain := _read_resource_terrain(resource_layer, cell)
 		if resource_terrain >= 0:
-			grid.set_terrain(_to_grid_cell(cell), resource_terrain)
+			var grid_cell := _to_grid_cell(cell)
+			grid.set_terrain(grid_cell, resource_terrain)
+			grid.set_blocks_movement(grid_cell, _read_blocks_movement(resource_layer, cell, true))
 			resource_cells_read += 1
 
 	return {
@@ -130,6 +135,16 @@ func _get_custom_data_string(tile_data: TileData, field_name: String) -> String:
 	if value == null:
 		return ""
 	return str(value).strip_edges().to_lower()
+
+
+func _read_blocks_movement(layer: TileMapLayer, cell: Vector2i, default_value: bool) -> bool:
+	var tile_data := layer.get_cell_tile_data(cell)
+	if tile_data == null:
+		return default_value
+	var value: Variant = tile_data.get_custom_data(BLOCKS_MOVEMENT_FIELD)
+	if value == null:
+		return default_value
+	return bool(value)
 
 
 func _count_terrain(grid: RefCounted) -> Dictionary:

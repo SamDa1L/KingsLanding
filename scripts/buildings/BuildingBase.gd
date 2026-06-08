@@ -168,8 +168,8 @@ func _get_resource_label(next_resource_type: StringName) -> String:
 		&"food":
 			return "食物"
 		&"wood":
-			return "木材"
+			return "木头"
 		&"stone":
-			return "石料"
+			return "石材"
 		_:
 			return "无"

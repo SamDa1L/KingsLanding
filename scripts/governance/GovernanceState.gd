@@ -118,3 +118,41 @@ func get_resource_snapshot() -> Dictionary:
 		MapTypes.RESOURCE_STONE: stone,
 		MapTypes.RESOURCE_GOLD: gold,
 	}
+
+
+func to_save_data() -> Dictionary:
+	return {
+		"population": population,
+		"households": households,
+		"gold": gold,
+		"food": food,
+		"wood": wood,
+		"stone": stone,
+		"tax_policy": tax_policy,
+		"happiness": happiness,
+		"stability": stability,
+		"riot_risk": riot_risk,
+		"town_center_damage": town_center_damage,
+		"town_center_destroyed": town_center_destroyed,
+		"day_count": day_count,
+	}
+
+
+func restore_from_save_data(save_data: Dictionary) -> bool:
+	if save_data.is_empty():
+		return false
+	gold = max(int(save_data.get("gold", gold)), 0)
+	food = max(int(save_data.get("food", food)), 0)
+	wood = max(int(save_data.get("wood", wood)), 0)
+	stone = max(int(save_data.get("stone", stone)), 0)
+	households = max(int(save_data.get("households", households)), 0)
+	day_count = max(int(save_data.get("day_count", day_count)), 1)
+	set_population(int(save_data.get("population", population)))
+	set_tax_policy(int(save_data.get("tax_policy", tax_policy)))
+	set_happiness(float(save_data.get("happiness", happiness)))
+	set_stability(float(save_data.get("stability", stability)))
+	set_riot_risk(float(save_data.get("riot_risk", riot_risk)))
+	town_center_damage = max(int(save_data.get("town_center_damage", town_center_damage)), 0)
+	town_center_destroyed = bool(save_data.get("town_center_destroyed", town_center_damage >= TOWN_CENTER_MAX_DAMAGE))
+	town_center_damage_changed.emit(town_center_damage, town_center_destroyed)
+	return true

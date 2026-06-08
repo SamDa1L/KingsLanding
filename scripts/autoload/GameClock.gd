@@ -113,6 +113,29 @@ func get_time_control_label() -> String:
 	return "运行中 / %s" % get_speed_label()
 
 
+func to_save_data() -> Dictionary:
+	return {
+		"total_minutes": _total_minutes,
+		"selected_time_scale": _selected_time_scale,
+		"paused": _is_paused,
+		"accumulated_seconds": _accumulated_seconds,
+	}
+
+
+func restore_from_save_data(save_data: Dictionary) -> bool:
+	if save_data.is_empty():
+		return false
+	_total_minutes = max(int(save_data.get("total_minutes", _total_minutes)), 0)
+	_accumulated_seconds = max(float(save_data.get("accumulated_seconds", 0.0)), 0.0)
+	_last_hour_index = get_hour_index()
+	_set_selected_time_scale(float(save_data.get("selected_time_scale", _selected_time_scale)))
+	set_paused(bool(save_data.get("paused", _is_paused)))
+	emit_time()
+	minute_changed.emit(_total_minutes)
+	hour_changed.emit(get_hour_index())
+	return true
+
+
 func set_time_scale(next_time_scale: float) -> void:
 	var clamped_scale: float = max(next_time_scale, 0.0)
 	if is_equal_approx(clamped_scale, 0.0):

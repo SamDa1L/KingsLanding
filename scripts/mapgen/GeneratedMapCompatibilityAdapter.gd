@@ -20,6 +20,7 @@ func build_legacy_grid(map_data) -> RefCounted:
 		if tile == null:
 			continue
 		grid.set_terrain(cell, _to_legacy_terrain(tile))
+		grid.set_blocks_movement(cell, _to_legacy_blocks_movement(tile))
 
 	return grid
 
@@ -55,3 +56,15 @@ func _to_legacy_terrain(tile) -> int:
 		return MapTypes.TerrainType.EMPTY
 
 	return MapTypes.TerrainType.WATER
+
+
+func _to_legacy_blocks_movement(tile) -> bool:
+	if tile == null:
+		return false
+	if tile.base_terrain == GeneratedTileDataScript.TERRAIN_WATER or tile.base_terrain == GeneratedTileDataScript.TERRAIN_SHALLOW_WATER:
+		return true
+	if tile.resource_type == GeneratedTileDataScript.RESOURCE_WOOD:
+		return true
+	if tile.resource_type == GeneratedTileDataScript.RESOURCE_STONE:
+		return true
+	return false

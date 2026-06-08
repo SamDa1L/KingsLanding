@@ -32,8 +32,8 @@ const BASE_TILE_ATLAS := { # 基础地形语义到基础图块坐标的映射表
 } # 基础地形映射表结束。
 
 const RESOURCE_TILE_ATLAS := { # 资源覆盖层语义到资源图块坐标的映射表。
-	&"wood": Vector2i(6, 1), # 木材资源图块坐标。
-	&"stone": Vector2i(6, 3), # 石料资源图块坐标。
+	&"wood": Vector2i(6, 1), # 木头资源图块坐标。
+	&"stone": Vector2i(6, 3), # 石材资源图块坐标。
 } # 资源图块映射表结束。
 
 const TRANSITION_OVERLAY_ATLAS := { # 过渡叠加层定义表，按过渡类型和方向掩码索引。

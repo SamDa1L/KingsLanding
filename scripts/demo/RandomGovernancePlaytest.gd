@@ -5,8 +5,9 @@ extends "res://scripts/demo/GovernanceDemo.gd"
 const NoiseBasedMapGeneratorScript := preload("res://scripts/mapgen/NoiseBasedMapGenerator.gd")
 const GeneratedMapRendererScript := preload("res://scripts/mapgen/GeneratedMapRenderer.gd")
 const GeneratedMapCompatibilityAdapterScript := preload("res://scripts/mapgen/GeneratedMapCompatibilityAdapter.gd")
-const GeneratedTileDataScript := preload("res://scripts/mapgen/GeneratedTileData.gd")
+const BuildingDataScript := preload("res://scripts/buildings/BuildingData.gd")
 const MapTypes := preload("res://scripts/map/MapTypes.gd")
+const WorldGenerationIdentityScript := preload("res://scripts/mapgen/world/WorldGenerationIdentity.gd")
 const WorldSemanticMapSaveScript := preload("res://scripts/mapgen/world/WorldSemanticMapSave.gd")
 const WorldSemanticGovernanceAdapterScript := preload("res://scripts/mapgen/world/WorldSemanticGovernanceAdapter.gd")
 const WorldSemanticGameplayQueryBridgeScript := preload("res://scripts/mapgen/world/WorldSemanticGameplayQueryBridge.gd")
@@ -38,6 +39,7 @@ enum BootstrapWorldSourceResult {
 }
 
 @export var random_map_seed: int = 20260530
+@export_file("*.save") var semantic_world_save_path: String = DEFAULT_SEMANTIC_WORLD_SAVE_PATH
 @export var random_map_size: Vector2i = Vector2i(160, 160)
 @export var random_map_chunk_size: int = 32
 @export var map_bootstrap_mode: int = MapBootstrapMode.SEMANTIC_PREWARM_FIRST
@@ -81,6 +83,7 @@ var _visual_build_stage_name: String = "Preparing gameplay scene"
 var _entry_visuals_finalized: bool = false
 var _pending_restored_runtime_chunks: Dictionary = {}
 var _pending_restored_governance_bootstrap_cache: Dictionary = {}
+var _pending_restored_gameplay_state: Dictionary = {}
 var _pending_restored_camera_cell: Vector2i = Vector2i.ZERO
 var _pending_restored_camera_zoom: float = 1.0
 var _has_pending_restored_camera_state: bool = false
@@ -98,6 +101,7 @@ var _load_baseline_completion_logged: bool = false
 
 @onready var transition_layer: TileMapLayer = get_node_or_null("MapRoot/TransitionLayer") as TileMapLayer
 @onready var chunk_streaming_manager: ChunkStreamingManager = get_node_or_null("ChunkStreamingManager") as ChunkStreamingManager
+@onready var return_castle_button: Button = get_node_or_null("UIRoot/TopResourceBar/HBoxContainer/ReturnCastleButton") as Button
 @onready var save_map_button: Button = get_node_or_null("UIRoot/TopResourceBar/HBoxContainer/SaveMapButton") as Button
 @onready var reset_map_button: Button = get_node_or_null("UIRoot/TopResourceBar/HBoxContainer/ResetMapButton") as Button
 
@@ -178,6 +182,7 @@ func _read_demo_map_from_semantic_prewarm_required() -> void:
 
 
 func _read_demo_map_from_semantic_ready_store() -> void:
+	_sync_random_map_seed_from_semantic_identity()
 	var runtime_chunks: Dictionary = _pending_restored_runtime_chunks.duplicate(true)
 	var build_context_started_usec: int = Time.get_ticks_usec()
 	var semantic_context: Dictionary = _resolve_semantic_governance_context(runtime_chunks)
@@ -194,6 +199,7 @@ func _read_demo_map_from_semantic_ready_store() -> void:
 	var restore_camera_started_usec: int = Time.get_ticks_usec()
 	_apply_pending_saved_camera_state()
 	_set_load_baseline_metric("restore_camera_ms", _elapsed_ms_since(restore_camera_started_usec))
+	_apply_pending_restored_gameplay_state()
 	_set_load_baseline_metric("read_demo_map_ms", _elapsed_ms_since(_read_demo_map_started_at_usec))
 	_update_load_baseline_runtime_metrics()
 	_update_semantic_save_controls()
@@ -648,10 +654,12 @@ func _bootstrap_via_loading_scene() -> bool:
 	if loading_instance == null:
 		return false
 
+	loading_instance.set("world_seed", random_map_seed)
 	loading_instance.set("auto_start", true)
 	loading_instance.set("auto_transition_to_gameplay", true)
 	loading_instance.set("auto_free_on_transition", true)
 	loading_instance.set("gameplay_scene", gameplay_scene_resource)
+	loading_instance.set("next_gameplay_semantic_world_save_path", semantic_world_save_path)
 
 	if get_parent() != null:
 		get_parent().call_deferred("add_child", loading_instance)
@@ -663,6 +671,8 @@ func _bootstrap_via_loading_scene() -> bool:
 
 
 func _setup_semantic_save_controls() -> void:
+	if return_castle_button != null and not return_castle_button.pressed.is_connected(_on_return_castle_pressed):
+		return_castle_button.pressed.connect(_on_return_castle_pressed)
 	if save_map_button != null and not save_map_button.pressed.is_connected(_on_save_map_pressed):
 		save_map_button.pressed.connect(_on_save_map_pressed)
 	if reset_map_button != null and not reset_map_button.pressed.is_connected(_on_reset_map_pressed):
@@ -671,6 +681,9 @@ func _setup_semantic_save_controls() -> void:
 
 func _update_semantic_save_controls() -> void:
 	var controls_visible: bool = _should_show_semantic_save_controls()
+	if return_castle_button != null:
+		return_castle_button.visible = controls_visible
+		return_castle_button.disabled = not controls_visible
 	if save_map_button != null:
 		save_map_button.visible = controls_visible
 		save_map_button.disabled = not controls_visible
@@ -688,6 +701,7 @@ func _should_show_semantic_save_controls() -> bool:
 func _clear_pending_saved_world_state() -> void:
 	_pending_restored_runtime_chunks.clear()
 	_pending_restored_governance_bootstrap_cache.clear()
+	_pending_restored_gameplay_state.clear()
 	_pending_restored_camera_cell = Vector2i.ZERO
 	_pending_restored_camera_zoom = 1.0
 	_has_pending_restored_camera_state = false
@@ -698,12 +712,12 @@ func _try_restore_saved_world(session) -> bool:
 		return false
 	if session == null or session.state != WorldSessionScript.WorldSessionState.EMPTY:
 		return false
-	if not WorldSemanticMapSaveScript.has_save(DEFAULT_SEMANTIC_WORLD_SAVE_PATH):
+	if not WorldSemanticMapSaveScript.has_save(semantic_world_save_path):
 		return false
 
-	_set_load_baseline_metric("save_file_bytes", _get_file_size_bytes(DEFAULT_SEMANTIC_WORLD_SAVE_PATH))
+	_set_load_baseline_metric("save_file_bytes", _get_file_size_bytes(semantic_world_save_path))
 	var load_world_started_usec: int = Time.get_ticks_usec()
-	var loaded_world: Dictionary = WorldSemanticMapSaveScript.load_world(DEFAULT_SEMANTIC_WORLD_SAVE_PATH)
+	var loaded_world: Dictionary = WorldSemanticMapSaveScript.load_world(semantic_world_save_path)
 	_set_load_baseline_metric("load_world_ms", _elapsed_ms_since(load_world_started_usec))
 	if loaded_world.is_empty():
 		return false
@@ -721,6 +735,7 @@ func _try_restore_saved_world(session) -> bool:
 	_bootstrapped_semantic_store = loaded_world["semantic_store"]
 	_pending_restored_runtime_chunks = (loaded_world.get("runtime_chunks", {}) as Dictionary).duplicate(true)
 	_pending_restored_governance_bootstrap_cache = (loaded_world.get("governance_bootstrap_cache", {}) as Dictionary).duplicate(true)
+	_pending_restored_gameplay_state = (loaded_world.get("gameplay_state", {}) as Dictionary).duplicate(true)
 	_pending_restored_camera_cell = loaded_world.get("camera_cell", Vector2i.ZERO)
 	_pending_restored_camera_zoom = float(loaded_world.get("camera_zoom", 1.0))
 	_has_pending_restored_camera_state = true
@@ -742,6 +757,332 @@ func _apply_pending_saved_camera_state() -> void:
 		_semantic_runtime_view.flush_runtime_visual_queue(maxi(semantic_runtime_visual_chunks_per_frame, 32))
 	_has_pending_restored_camera_state = false
 	_append_event_log("已恢复保存的语义地图。")
+
+
+func _apply_pending_restored_gameplay_state() -> void:
+	if _pending_restored_gameplay_state.is_empty():
+		return
+	var restored: bool = _apply_restored_gameplay_state(_pending_restored_gameplay_state)
+	_pending_restored_gameplay_state.clear()
+	if restored:
+		_append_event_log("已恢复保存的游戏进度。")
+	else:
+		push_warning("保存的完整玩法状态无效，已保留当前默认玩法状态。")
+
+
+func _apply_restored_gameplay_state(gameplay_state: Dictionary) -> bool:
+	if gameplay_state.is_empty():
+		return false
+	if int(gameplay_state.get("gameplay_state_version", 0)) != WorldSemanticMapSaveScript.GAMEPLAY_STATE_VERSION:
+		return false
+
+	var restored_buildings: Array = _build_restored_buildings_from_gameplay_state(gameplay_state)
+	var restored_castle_migration_message: String = _migrate_restored_castle_footprint_if_needed(restored_buildings)
+	_clear_initial_building_nodes()
+	_clear_villager_nodes()
+	occupied_cells.clear()
+	initial_buildings = restored_buildings
+	for building in initial_buildings:
+		if building == null:
+			continue
+		_register_occupied_cells_for_building(building)
+		_instantiate_building_visual(building)
+		_clear_building_footprint_resource_visuals(building)
+
+	_restore_resource_inventory_from_gameplay_state(gameplay_state)
+	_restore_governance_state_from_gameplay_state(gameplay_state)
+	_restore_game_clock_from_gameplay_state(gameplay_state)
+	_restore_runtime_reports_from_gameplay_state(gameplay_state)
+	_restore_event_log_from_gameplay_state(gameplay_state)
+	if not restored_castle_migration_message.is_empty():
+		_append_event_log(restored_castle_migration_message)
+	_restore_auxiliary_systems_from_gameplay_state(gameplay_state)
+	_restore_resource_depletion_state_from_gameplay_state(gameplay_state)
+	_refresh_semantic_gameplay_query_bridge()
+	_rebind_restored_resource_buildings()
+	_setup_placement_controller()
+	_restore_worker_assignments_from_gameplay_state(gameplay_state)
+	_restore_worker_resource_tasks_from_gameplay_state(gameplay_state)
+	_refresh_building_hover_visuals()
+	_update_placement_overlay()
+	_update_economy_ui()
+	_update_stage14_hud()
+	_update_worker_control_ui()
+	return true
+
+
+func _build_restored_buildings_from_gameplay_state(gameplay_state: Dictionary) -> Array:
+	var restored_buildings: Array = []
+	var buildings_variant: Variant = gameplay_state.get("buildings", [])
+	if typeof(buildings_variant) != TYPE_ARRAY:
+		return restored_buildings
+	var building_save_data_array: Array = buildings_variant
+	for building_save_data_variant in building_save_data_array:
+		if typeof(building_save_data_variant) != TYPE_DICTIONARY:
+			continue
+		var building_save_data: Dictionary = building_save_data_variant
+		var restored_building: BuildingData = BuildingDataScript.from_save_data(building_save_data)
+		if restored_building == null:
+			continue
+		restored_buildings.append(restored_building)
+	return restored_buildings
+
+
+func _migrate_restored_castle_footprint_if_needed(restored_buildings: Array) -> String:
+	if grid == null:
+		return ""
+	var blocked_cells: Dictionary = _build_restored_non_castle_occupied_cells(restored_buildings)
+	for building_variant in restored_buildings:
+		if not (building_variant is RefCounted):
+			continue
+		var building: RefCounted = building_variant
+		if int(building.building_type) != MapTypes.BuildingType.TOWN_CENTER:
+			continue
+		if BuildingFootprintRulesScript.is_castle_footprint_valid_and_unblocked(grid, building.position, blocked_cells):
+			return ""
+		var migrated_cell: Vector2i = BuildingFootprintRulesScript.find_nearest_valid_castle_cell_avoiding(grid, blocked_cells, building.position)
+		if migrated_cell.x < 0 or migrated_cell.y < 0:
+			push_warning("旧存档中的城堡位置不满足 9x9 占地规则，且当前地图没有找到可迁移位置。")
+			return ""
+		var previous_cell: Vector2i = building.position
+		building.position = migrated_cell
+		var message: String = "旧存档中的城堡位置不满足 9x9 占地规则，已从 %s 自动迁移到 %s。" % [str(previous_cell), str(migrated_cell)]
+		push_warning(message)
+		return message
+	return ""
+
+
+func _build_restored_non_castle_occupied_cells(restored_buildings: Array) -> Dictionary:
+	var blocked_cells: Dictionary = {}
+	for building_variant in restored_buildings:
+		if not (building_variant is RefCounted):
+			continue
+		var building: RefCounted = building_variant
+		if int(building.building_type) == MapTypes.BuildingType.TOWN_CENTER:
+			continue
+		BuildingFootprintRulesScript.register_building_footprint(blocked_cells, int(building.building_type), building.position)
+	return blocked_cells
+
+
+func _rebind_restored_resource_buildings() -> void:
+	if _semantic_gameplay_query_bridge == null:
+		return
+	var base_regions_by_id: Dictionary = super._get_regions_by_id()
+	for building_variant in initial_buildings:
+		if not (building_variant is RefCounted):
+			continue
+		var building: RefCounted = building_variant
+		var required_terrain: int = _get_required_resource_terrain_for_building(int(building.building_type))
+		if required_terrain < 0:
+			continue
+		if _get_resource_region_for_building(building, base_regions_by_id) != null:
+			continue
+		var rebound_region: RefCounted = _semantic_gameplay_query_bridge.find_resource_region_for_building_cell(building.position, required_terrain)
+		if rebound_region == null:
+			continue
+		building.linked_region_id = int(rebound_region.get("region_id"))
+		_sync_building_node_linked_region_meta(building)
+
+
+func _sync_building_node_linked_region_meta(building: RefCounted) -> void:
+	var building_node: Node2D = _find_building_node(building)
+	if building_node == null or not is_instance_valid(building_node):
+		return
+	building_node.set_meta("linked_region_id", building.linked_region_id)
+
+
+func _restore_resource_inventory_from_gameplay_state(gameplay_state: Dictionary) -> void:
+	if resource_inventory == null or not resource_inventory.has_method("restore_from_save_data"):
+		return
+	var save_data: Dictionary = _get_gameplay_state_dictionary(gameplay_state, "resource_inventory")
+	if save_data.is_empty():
+		return
+	resource_inventory.call("restore_from_save_data", save_data)
+
+
+func _restore_governance_state_from_gameplay_state(gameplay_state: Dictionary) -> void:
+	if governance_state == null or not governance_state.has_method("restore_from_save_data"):
+		return
+	var save_data: Dictionary = _get_gameplay_state_dictionary(gameplay_state, "governance_state")
+	if save_data.is_empty():
+		return
+	governance_state.call("restore_from_save_data", save_data)
+
+
+func _restore_game_clock_from_gameplay_state(gameplay_state: Dictionary) -> void:
+	if game_clock == null or not game_clock.has_method("restore_from_save_data"):
+		return
+	var save_data: Dictionary = _get_gameplay_state_dictionary(gameplay_state, "game_clock")
+	if save_data.is_empty():
+		return
+	game_clock.call("restore_from_save_data", save_data)
+
+
+func _restore_resource_depletion_state_from_gameplay_state(gameplay_state: Dictionary) -> void:
+	if resource_depletion_state == null:
+		resource_depletion_state = ResourceDepletionStateScript.new()
+	if resource_depletion_state == null or not resource_depletion_state.has_method("load_save_data"):
+		return
+
+	var save_data: Dictionary = _get_gameplay_state_dictionary(gameplay_state, "resource_depletion_state")
+	resource_depletion_state.call("load_save_data", save_data)
+	_apply_restored_resource_depletion_to_world()
+
+
+func _restore_runtime_reports_from_gameplay_state(gameplay_state: Dictionary) -> void:
+	last_minute_delta = _get_gameplay_state_dictionary(gameplay_state, "last_minute_delta")
+	last_tax_message = str(gameplay_state.get("last_tax_message", ""))
+	last_happiness_message = str(gameplay_state.get("last_happiness_message", ""))
+	last_happiness_report = _get_gameplay_state_dictionary(gameplay_state, "last_happiness_report")
+	last_riot_message = str(gameplay_state.get("last_riot_message", ""))
+	last_riot_report = _get_gameplay_state_dictionary(gameplay_state, "last_riot_report")
+	last_victory_defeat_report = _get_gameplay_state_dictionary(gameplay_state, "last_victory_defeat_report")
+	last_daily_happiness_delta = float(gameplay_state.get("last_daily_happiness_delta", 0.0))
+	last_tax_day_index = int(gameplay_state.get("last_tax_day_index", -1))
+
+
+func _restore_event_log_from_gameplay_state(gameplay_state: Dictionary) -> void:
+	event_log_messages.clear()
+	var messages_variant: Variant = gameplay_state.get("event_log_messages", [])
+	if typeof(messages_variant) != TYPE_ARRAY:
+		return
+	var messages: Array = messages_variant
+	for message_variant in messages:
+		var message: String = str(message_variant)
+		if message.is_empty():
+			continue
+		event_log_messages.append(message)
+		if event_log_messages.size() >= 3:
+			break
+
+
+func _restore_auxiliary_systems_from_gameplay_state(gameplay_state: Dictionary) -> void:
+	if happiness_system != null and happiness_system.has_method("set_stable_day_count"):
+		happiness_system.call("set_stable_day_count", int(gameplay_state.get("happiness_stable_day_count", 0)))
+	if victory_defeat_system == null:
+		return
+	victory_defeat_system.set("consecutive_riot_days", max(int(gameplay_state.get("victory_consecutive_riot_days", 0)), 0))
+	victory_defeat_system.set("completed_day_index", max(int(gameplay_state.get("victory_completed_day_index", 0)), 0))
+	victory_defeat_system.set("final_report", last_victory_defeat_report.duplicate(true))
+	if last_victory_defeat_report.is_empty():
+		victory_defeat_system.set("result_type", &"none")
+		victory_defeat_system.set("reason_id", &"none")
+		victory_defeat_system.set("reason_text", "尚未结算")
+		return
+	victory_defeat_system.set("result_type", StringName(str(last_victory_defeat_report.get("result_type", &"none"))))
+	victory_defeat_system.set("reason_id", StringName(str(last_victory_defeat_report.get("reason_id", &"none"))))
+	victory_defeat_system.set("reason_text", str(last_victory_defeat_report.get("reason_text", "")))
+
+
+func _restore_worker_assignments_from_gameplay_state(gameplay_state: Dictionary) -> void:
+	_reconcile_worker_assignments_to_population()
+	_rebuild_villager_population_from_gameplay_state(gameplay_state)
+
+
+func _rebuild_villager_population_from_gameplay_state(gameplay_state: Dictionary) -> void:
+	_clear_villager_nodes()
+
+	var home_building := _find_home_building()
+	if home_building == null:
+		push_warning("No castle or house available for villager population rebuild.")
+		return
+
+	var home_position := _get_building_route_point_for_root(home_building, characters_root, HOME_EXIT_OFFSET)
+	var fallback_wander_bounds := _get_idle_villager_wander_bounds()
+
+	var worker_index := 0
+	for building in _get_production_buildings():
+		if building == null:
+			continue
+		var worker_count := int(building.call("get_worker_count")) if building.has_method("get_worker_count") else 0
+		if worker_count <= 0:
+			continue
+		var work_position := _get_building_route_point_for_root(building, characters_root, WORK_ENTRY_OFFSET)
+		for local_index in range(worker_count):
+			_spawn_villager_route(worker_index, home_position, work_position, building)
+			worker_index += 1
+
+	var assigned_workers := _get_assigned_worker_total()
+	var idle_population: int = max(int(governance_state.population) - assigned_workers, 0) if governance_state != null else 0
+	var restored_idle_origins: Array = _get_idle_villager_origin_save_data_from_gameplay_state(gameplay_state)
+	if restored_idle_origins.is_empty() and idle_population > 0:
+		restored_idle_origins = _infer_idle_villager_origins_for_legacy_gameplay_state(idle_population)
+	for idle_index in range(idle_population):
+		var villager_index: int = worker_index + idle_index
+		var origin_data: Dictionary = restored_idle_origins[idle_index] if idle_index < restored_idle_origins.size() else {}
+		_spawn_idle_villager_from_origin_data(villager_index, origin_data, fallback_wander_bounds)
+
+	_rebalance_villager_assignments()
+
+
+func _get_idle_villager_origin_save_data_from_gameplay_state(gameplay_state: Dictionary) -> Array:
+	var origins_variant: Variant = gameplay_state.get("idle_villager_origins", [])
+	if typeof(origins_variant) != TYPE_ARRAY:
+		return []
+	var origins: Array = []
+	for origin_variant in origins_variant:
+		if typeof(origin_variant) != TYPE_DICTIONARY:
+			continue
+		var origin_data: Dictionary = origin_variant
+		origins.append(origin_data.duplicate(true))
+	return origins
+
+
+func _infer_idle_villager_origins_for_legacy_gameplay_state(idle_population: int) -> Array:
+	var origins: Array = []
+	if idle_population <= 0:
+		return origins
+	var castle_building: RefCounted = _find_castle_building()
+	var castle_slots: int = mini(CASTLE_POPULATION_CAPACITY, idle_population)
+	if castle_building != null:
+		for _castle_index in range(castle_slots):
+			origins.append({
+				"origin_type": "castle",
+				"castle_cell": castle_building.position,
+			})
+	var remaining_idle_population: int = idle_population - origins.size()
+	if remaining_idle_population <= 0:
+		return origins
+	for building in initial_buildings:
+		if building == null or int(building.building_type) != MapTypes.BuildingType.HOUSE:
+			continue
+		for _house_index in range(HOUSE_POPULATION_CAPACITY):
+			if origins.size() >= idle_population:
+				return origins
+			origins.append({
+				"origin_type": "house",
+				"home_building_cell": building.position,
+			})
+	while origins.size() < idle_population:
+		origins.append({"origin_type": "fallback"})
+	return origins
+
+
+func _spawn_idle_villager_from_origin_data(villager_index: int, origin_data: Dictionary, fallback_wander_bounds: Rect2) -> void:
+	var origin_type: String = str(origin_data.get("origin_type", ""))
+	match origin_type:
+		"house":
+			var home_cell: Vector2i = _get_vector2i_from_dictionary(origin_data, "home_building_cell", Vector2i(-1, -1))
+			var house_building: RefCounted = _find_building_at_cell(MapTypes.BuildingType.HOUSE, home_cell)
+			if house_building != null:
+				_spawn_idle_villager_for_house(villager_index, house_building, fallback_wander_bounds)
+				return
+		"castle":
+			var castle_cell: Vector2i = _get_vector2i_from_dictionary(origin_data, "castle_cell", Vector2i(-1, -1))
+			var castle_building: RefCounted = _find_building_at_cell(MapTypes.BuildingType.TOWN_CENTER, castle_cell)
+			if castle_building != null:
+				var castle_spawn_context: Dictionary = _get_initial_castle_villager_spawn_context()
+				_spawn_initial_castle_idle_villager(villager_index, castle_spawn_context, fallback_wander_bounds.get_center(), fallback_wander_bounds)
+				return
+	_spawn_fallback_idle_villager(villager_index, fallback_wander_bounds)
+
+
+func _get_gameplay_state_dictionary(gameplay_state: Dictionary, key: String) -> Dictionary:
+	var dictionary_variant: Variant = gameplay_state.get(key, {})
+	if typeof(dictionary_variant) != TYPE_DICTIONARY:
+		return {}
+	var dictionary_value: Dictionary = dictionary_variant
+	return dictionary_value.duplicate(true)
 
 
 func _collect_runtime_chunks_for_save() -> Dictionary:
@@ -778,6 +1119,349 @@ func _build_governance_bootstrap_context_for_save() -> Dictionary:
 	}
 
 
+func _build_gameplay_state_for_save() -> Dictionary:
+	return {
+		"gameplay_state_version": WorldSemanticMapSaveScript.GAMEPLAY_STATE_VERSION,
+		"buildings": _build_building_save_data_for_gameplay_state(),
+		"resource_inventory": _build_resource_inventory_save_data_for_gameplay_state(),
+		"resource_depletion_state": _build_resource_depletion_save_data_for_gameplay_state(),
+		"idle_villager_origins": _build_idle_villager_origin_save_data_for_gameplay_state(),
+		"worker_resource_tasks": _build_worker_resource_task_save_data_for_gameplay_state(),
+		"governance_state": _build_governance_state_save_data_for_gameplay_state(),
+		"game_clock": _build_game_clock_save_data_for_gameplay_state(),
+		"event_log_messages": event_log_messages.duplicate(),
+		"last_minute_delta": last_minute_delta.duplicate(true),
+		"last_tax_message": last_tax_message,
+		"last_happiness_message": last_happiness_message,
+		"last_happiness_report": last_happiness_report.duplicate(true),
+		"last_riot_message": last_riot_message,
+		"last_riot_report": last_riot_report.duplicate(true),
+		"last_victory_defeat_report": last_victory_defeat_report.duplicate(true),
+		"last_daily_happiness_delta": last_daily_happiness_delta,
+		"last_tax_day_index": last_tax_day_index,
+		"happiness_stable_day_count": _get_happiness_stable_day_count_for_save(),
+		"victory_consecutive_riot_days": _get_victory_consecutive_riot_days_for_save(),
+		"victory_completed_day_index": _get_victory_completed_day_index_for_save(),
+	}
+
+
+func _build_building_save_data_for_gameplay_state() -> Array:
+	var buildings_save_data: Array = []
+	for building in initial_buildings:
+		if building == null or not building.has_method("to_save_data"):
+			continue
+		buildings_save_data.append(building.call("to_save_data"))
+	return buildings_save_data
+
+
+func _build_resource_inventory_save_data_for_gameplay_state() -> Dictionary:
+	if resource_inventory == null or not resource_inventory.has_method("to_save_data"):
+		return {}
+	return resource_inventory.call("to_save_data")
+
+
+func _build_resource_depletion_save_data_for_gameplay_state() -> Dictionary:
+	if resource_depletion_state == null or not resource_depletion_state.has_method("to_save_data"):
+		return {}
+	var save_data_variant: Variant = resource_depletion_state.call("to_save_data")
+	if typeof(save_data_variant) != TYPE_DICTIONARY:
+		return {}
+	var save_data: Dictionary = save_data_variant
+	return save_data.duplicate(true)
+
+
+func _build_idle_villager_origin_save_data_for_gameplay_state() -> Array:
+	var origin_save_data: Array = []
+	if characters_root == null:
+		return origin_save_data
+	for villager_variant in _get_idle_villagers():
+		if not (villager_variant is Node2D):
+			continue
+		var villager := villager_variant as Node2D
+		var origin_data: Dictionary = _build_idle_villager_origin_save_data(villager)
+		if origin_data.is_empty():
+			continue
+		origin_save_data.append(origin_data)
+	return origin_save_data
+
+
+func _build_idle_villager_origin_save_data(villager: Node2D) -> Dictionary:
+	if villager == null or not is_instance_valid(villager):
+		return {}
+	var home_cell_variant: Variant = villager.get_meta("home_building_cell", Vector2i(-1, -1))
+	if typeof(home_cell_variant) == TYPE_VECTOR2I:
+		var home_cell: Vector2i = home_cell_variant
+		if home_cell.x >= 0 and home_cell.y >= 0:
+			return {
+				"origin_type": "house",
+				"home_building_cell": home_cell,
+			}
+	if str(villager.get_meta("wander_rule", "")) == "castle_initial_grid":
+		var castle_cell_variant: Variant = villager.get_meta("castle_cell", Vector2i(-1, -1))
+		if typeof(castle_cell_variant) == TYPE_VECTOR2I:
+			var castle_cell: Vector2i = castle_cell_variant
+			if castle_cell.x >= 0 and castle_cell.y >= 0:
+				return {
+					"origin_type": "castle",
+					"castle_cell": castle_cell,
+				}
+	return {"origin_type": "fallback"}
+
+
+func _build_worker_resource_task_save_data_for_gameplay_state() -> Array:
+	var task_save_data_array: Array = []
+	for villager_variant in worker_resource_tasks.keys():
+		var task_variant: Variant = worker_resource_tasks.get(villager_variant, {})
+		if typeof(task_variant) != TYPE_DICTIONARY:
+			continue
+		var task: Dictionary = task_variant
+		var building_variant: Variant = task.get("building", null)
+		var building_index: int = initial_buildings.find(building_variant)
+		if building_index < 0:
+			continue
+		var resource_type: StringName = StringName(str(task.get("resource_type", &"")))
+		if resource_type == &"":
+			continue
+		var task_state: StringName = StringName(str(task.get("state", &"idle")))
+		if task_state == &"idle":
+			continue
+		task_save_data_array.append({
+			"building_index": building_index,
+			"resource_type": str(resource_type),
+			"target_resource_cell": task.get("target_resource_cell", Vector2i(-1, -1)),
+			"target_work_cell": task.get("target_work_cell", Vector2i(-1, -1)),
+			"state": str(task_state),
+			"collect_elapsed_minutes": float(task.get("collect_elapsed_minutes", task.get("collect_elapsed_seconds", 0.0))),
+			"collect_required_minutes": float(task.get("collect_required_minutes", task.get("collect_required_seconds", 0.0))),
+			"carried_amount": max(float(task.get("carried_amount", 0.0)), 0.0),
+			"carry_amount_per_trip": max(float(task.get("carry_amount_per_trip", 1.0)), 0.0),
+			"delivered_amount": max(float(task.get("delivered_amount", 0.0)), 0.0),
+			"shift_elapsed_minutes": max(float(task.get("shift_elapsed_minutes", 0.0)), 0.0),
+			"shift_required_minutes": max(float(task.get("shift_required_minutes", 90.0)), 0.0),
+			"pending_rest_after_delivery": bool(task.get("pending_rest_after_delivery", false)),
+			"shift_resting": bool(task.get("shift_resting", false)),
+			"failure_reason": str(task.get("failure_reason", "")),
+		})
+	return task_save_data_array
+
+
+func _restore_worker_resource_tasks_from_gameplay_state(gameplay_state: Dictionary) -> void:
+	var worker_task_save_data_variant: Variant = gameplay_state.get("worker_resource_tasks", [])
+	if typeof(worker_task_save_data_variant) != TYPE_ARRAY:
+		return
+	var task_save_data_array: Array = worker_task_save_data_variant
+	var task_entries_by_building_index: Dictionary = _group_worker_resource_task_save_data_by_building(task_save_data_array)
+	var restored_task_count: int = 0
+	for building_index_variant in task_entries_by_building_index.keys():
+		var building_index: int = int(building_index_variant)
+		if building_index < 0 or building_index >= initial_buildings.size():
+			continue
+		var building_variant: Variant = initial_buildings[building_index]
+		if not (building_variant is RefCounted):
+			continue
+		var building: RefCounted = building_variant
+		var assigned_villagers: Array = _get_villagers_for_building(building)
+		var task_entries: Array = task_entries_by_building_index.get(building_index, [])
+		if assigned_villagers.is_empty():
+			_restore_unbound_worker_resource_task_entries_to_building_storage(building, task_entries)
+			continue
+		var restore_count: int = mini(task_entries.size(), assigned_villagers.size())
+		for task_index in range(restore_count):
+			var villager_variant: Variant = assigned_villagers[task_index]
+			if not (villager_variant is Node2D):
+				continue
+			var villager := villager_variant as Node2D
+			var task_save_data: Dictionary = task_entries[task_index]
+			if _restore_worker_resource_task_to_villager(villager, building, task_save_data):
+				restored_task_count += 1
+			else:
+				_restore_unbound_worker_resource_task_entry_to_building_storage(building, task_save_data)
+		for task_index in range(restore_count, task_entries.size()):
+			var task_save_data: Dictionary = task_entries[task_index]
+			_restore_unbound_worker_resource_task_entry_to_building_storage(building, task_save_data)
+	if restored_task_count > 0:
+		_append_event_log("已恢复工人未交付资源任务。")
+		_update_economy_ui()
+		_update_worker_control_ui()
+
+
+func _group_worker_resource_task_save_data_by_building(task_save_data_array: Array) -> Dictionary:
+	var entries_by_building_index: Dictionary = {}
+	for task_entry_variant in task_save_data_array:
+		if typeof(task_entry_variant) != TYPE_DICTIONARY:
+			continue
+		var task_save_data: Dictionary = task_entry_variant
+		var building_index: int = int(task_save_data.get("building_index", -1))
+		if building_index < 0:
+			continue
+		var entries: Array = entries_by_building_index.get(building_index, [])
+		entries.append(task_save_data)
+		entries_by_building_index[building_index] = entries
+	return entries_by_building_index
+
+
+func _restore_unbound_worker_resource_task_entries_to_building_storage(building: RefCounted, task_entries: Array) -> void:
+	for task_entry_variant in task_entries:
+		if typeof(task_entry_variant) != TYPE_DICTIONARY:
+			continue
+		var task_save_data: Dictionary = task_entry_variant
+		_restore_unbound_worker_resource_task_entry_to_building_storage(building, task_save_data)
+
+
+func _restore_unbound_worker_resource_task_entry_to_building_storage(building: RefCounted, task_save_data: Dictionary) -> void:
+	if building == null or not building.has_method("add_to_storage"):
+		return
+	var carried_amount: float = max(float(task_save_data.get("carried_amount", 0.0)), 0.0)
+	if carried_amount <= 0.0:
+		return
+	var resource_type: StringName = StringName(str(task_save_data.get("resource_type", &"")))
+	if resource_type == &"":
+		resource_type = MapTypes.get_resource_name_for_building(int(building.building_type))
+	if resource_type == &"":
+		return
+	var accepted_amount: float = float(building.call("add_to_storage", resource_type, carried_amount))
+	_restore_worker_resource_overflow_to_inventory(resource_type, max(carried_amount - accepted_amount, 0.0))
+
+
+func _restore_worker_resource_task_to_villager(villager: Node2D, building: RefCounted, task_save_data: Dictionary) -> bool:
+	if villager == null or not is_instance_valid(villager) or building == null:
+		return false
+	var resource_type: StringName = StringName(str(task_save_data.get("resource_type", &"")))
+	if resource_type == &"":
+		resource_type = MapTypes.get_resource_name_for_building(int(building.building_type))
+	if resource_type == &"":
+		return false
+	var target: Dictionary = _build_restored_worker_resource_task_target(villager, building, task_save_data, resource_type)
+	if not bool(target.get("ok", false)):
+		return false
+	var task: Dictionary = _build_worker_resource_task(villager, building, target)
+	_apply_worker_resource_task_save_data(task, task_save_data, resource_type)
+	worker_resource_tasks[villager] = task
+	_restore_villager_cycle_for_worker_resource_task(villager, task)
+	_update_worker_resource_task_visual_status(villager, task)
+	return true
+
+
+func _build_restored_worker_resource_task_target(villager: Node2D, building: RefCounted, task_save_data: Dictionary, resource_type: StringName) -> Dictionary:
+	var resource_cell: Vector2i = _get_vector2i_from_dictionary(task_save_data, "target_resource_cell", Vector2i(-1, -1))
+	var work_cell: Vector2i = _get_vector2i_from_dictionary(task_save_data, "target_work_cell", Vector2i(-1, -1))
+	var reserved_resource_cells: Dictionary = _get_reserved_resource_cells_for_building(building, villager)
+	if resource_cell.x >= 0 and work_cell.x >= 0 and not _is_resource_cell_reserved(resource_cell, reserved_resource_cells):
+		return {
+			"ok": true,
+			"reason": "",
+			"building": building,
+			"region": null,
+			"resource_type": resource_type,
+			"resource_cell": resource_cell,
+			"work_cell": work_cell,
+		}
+	return _find_resource_collection_target_for_building(building, villager)
+
+
+func _get_vector2i_from_dictionary(dictionary: Dictionary, key: String, default_value: Vector2i) -> Vector2i:
+	var value: Variant = dictionary.get(key, default_value)
+	if typeof(value) == TYPE_VECTOR2I:
+		return value
+	return default_value
+
+
+func _apply_worker_resource_task_save_data(task: Dictionary, task_save_data: Dictionary, resource_type: StringName) -> void:
+	var task_state: StringName = StringName(str(task_save_data.get("state", RESOURCE_TASK_GOING_TO_RESOURCE)))
+	var carried_amount: float = max(float(task_save_data.get("carried_amount", 0.0)), 0.0)
+	var failure_reason: String = str(task_save_data.get("failure_reason", ""))
+	if task_state == RESOURCE_TASK_FAILED and failure_reason.contains("库存已满") and carried_amount > 0.0:
+		task_state = RESOURCE_TASK_WAITING_FOR_STORAGE
+		failure_reason = "等待清空建筑库存。"
+	task["state"] = task_state
+	task["resource_type"] = resource_type
+	task["collect_elapsed_minutes"] = max(float(task_save_data.get("collect_elapsed_minutes", 0.0)), 0.0)
+	task["collect_elapsed_seconds"] = float(task["collect_elapsed_minutes"])
+	task["collect_required_minutes"] = max(float(task_save_data.get("collect_required_minutes", task.get("collect_required_minutes", 0.0))), 0.0)
+	task["collect_required_seconds"] = float(task["collect_required_minutes"])
+	task["carried_amount"] = carried_amount
+	task["carry_amount_per_trip"] = max(float(task_save_data.get("carry_amount_per_trip", task.get("carry_amount_per_trip", RESOURCE_TASK_CARRY_AMOUNT))), 0.0)
+	task["delivered_amount"] = max(float(task_save_data.get("delivered_amount", 0.0)), 0.0)
+	task["shift_elapsed_minutes"] = max(float(task_save_data.get("shift_elapsed_minutes", 0.0)), 0.0)
+	task["shift_required_minutes"] = max(float(task_save_data.get("shift_required_minutes", RESOURCE_TASK_DEFAULT_SHIFT_MINUTES)), 0.0)
+	task["pending_rest_after_delivery"] = bool(task_save_data.get("pending_rest_after_delivery", false))
+	task["shift_resting"] = bool(task_save_data.get("shift_resting", false))
+	task["failure_reason"] = failure_reason
+
+
+func _restore_villager_cycle_for_worker_resource_task(villager: Node2D, task: Dictionary) -> void:
+	if villager == null or not is_instance_valid(villager):
+		return
+	_update_villager_resource_task_targets(villager, task, true)
+	var task_state: StringName = StringName(str(task.get("state", RESOURCE_TASK_GOING_TO_RESOURCE)))
+	match task_state:
+		RESOURCE_TASK_COLLECTING:
+			_restore_villager_to_resource_work_position(villager, task)
+		RESOURCE_TASK_RETURNING_TO_BUILDING:
+			_request_villager_return_to_building(villager)
+		RESOURCE_TASK_DELIVERING, RESOURCE_TASK_WAITING_FOR_STORAGE:
+			_restore_villager_to_building_delivery_position(villager, task)
+		RESOURCE_TASK_RESTING:
+			_restore_villager_to_resting_position(villager, task)
+		_:
+			pass
+
+
+func _restore_villager_to_resource_work_position(villager: Node2D, task: Dictionary) -> void:
+	villager.position = task.get("target_work_position", villager.position)
+	if villager.has_method("_set_state"):
+		var remaining_minutes: float = max(float(task.get("collect_required_minutes", 0.0)) - float(task.get("collect_elapsed_minutes", 0.0)), 0.0)
+		villager.call("_set_state", 2, remaining_minutes)
+
+
+func _restore_villager_to_building_delivery_position(villager: Node2D, task: Dictionary) -> void:
+	villager.position = task.get("building_delivery_position", villager.position)
+	if villager.has_method("_set_state"):
+		villager.call("_set_state", 4, 0.0)
+
+
+func _restore_villager_to_resting_position(villager: Node2D, task: Dictionary) -> void:
+	villager.position = task.get("building_delivery_position", villager.position)
+	if villager.has_method("_set_state"):
+		villager.call("_set_state", 4, max(float(task.get("shift_required_minutes", 0.0)) - float(task.get("shift_elapsed_minutes", 0.0)), 0.0))
+
+
+func _restore_worker_resource_overflow_to_inventory(resource_type: StringName, overflow_amount: float) -> void:
+	if overflow_amount <= 0.0 or resource_inventory == null or not resource_inventory.has_method("add_amount"):
+		return
+	resource_inventory.call("add_amount", resource_type, overflow_amount)
+
+
+func _build_governance_state_save_data_for_gameplay_state() -> Dictionary:
+	if governance_state == null or not governance_state.has_method("to_save_data"):
+		return {}
+	return governance_state.call("to_save_data")
+
+
+func _build_game_clock_save_data_for_gameplay_state() -> Dictionary:
+	if game_clock == null or not game_clock.has_method("to_save_data"):
+		return {}
+	return game_clock.call("to_save_data")
+
+
+func _get_happiness_stable_day_count_for_save() -> int:
+	if happiness_system == null:
+		return 0
+	return max(int(happiness_system.get("stable_day_count")), 0)
+
+
+func _get_victory_consecutive_riot_days_for_save() -> int:
+	if victory_defeat_system == null:
+		return 0
+	return max(int(victory_defeat_system.get("consecutive_riot_days")), 0)
+
+
+func _get_victory_completed_day_index_for_save() -> int:
+	if victory_defeat_system == null:
+		return 0
+	return max(int(victory_defeat_system.get("completed_day_index")), 0)
+
+
 func save_semantic_world() -> bool:
 	var session = get_node_or_null("/root/WorldSession")
 	var identity = _bootstrapped_semantic_identity
@@ -786,8 +1470,19 @@ func save_semantic_world() -> bool:
 		identity = session.identity
 		store = session.get_ready_semantic_store()
 	if identity == null or store == null:
-		_append_event_log("保存失败：当前不是可保存的语义世界。")
+		_append_event_log("保存失败：当前世界不可保存。")
 		return false
+
+	var gameplay_state: Dictionary = _build_gameplay_state_for_save()
+	if gameplay_state.is_empty():
+		_append_event_log("保存失败：玩法状态序列化失败。")
+		return false
+	var saved_message: String = "已保存当前游戏进度。"
+	var event_log_for_save: Array = event_log_messages.duplicate()
+	event_log_for_save.push_front(saved_message)
+	while event_log_for_save.size() > 3:
+		event_log_for_save.pop_back()
+	gameplay_state["event_log_messages"] = event_log_for_save
 
 	var saved: bool = WorldSemanticMapSaveScript.save_world(
 		identity,
@@ -796,9 +1491,10 @@ func save_semantic_world() -> bool:
 		_get_semantic_camera_cell_for_save(),
 		main_camera.zoom.x if main_camera != null else 1.0,
 		_build_governance_bootstrap_context_for_save(),
-		DEFAULT_SEMANTIC_WORLD_SAVE_PATH
+		semantic_world_save_path,
+		gameplay_state
 	)
-	_append_event_log("已保存当前语义地图。" if saved else "保存失败：写入存档失败。")
+	_append_event_log(saved_message if saved else "保存失败：写入存档失败。")
 	return saved
 
 
@@ -806,6 +1502,8 @@ func reset_semantic_world() -> bool:
 	if not _should_show_semantic_save_controls():
 		_append_event_log("重置失败：当前不是语义地图模式。")
 		return false
+	random_map_seed = _get_next_semantic_reset_seed()
+	_append_event_log("开始生成新的语义地图，seed=%d" % random_map_seed)
 	if _bootstrap_via_loading_scene():
 		return true
 	_append_event_log("重置失败：无法启动语义 Loading 场景。")
@@ -816,8 +1514,36 @@ func _on_save_map_pressed() -> void:
 	save_semantic_world()
 
 
+func _on_return_castle_pressed() -> void:
+	var current_zoom: Vector2 = main_camera.zoom if main_camera != null else Vector2.ONE
+	is_camera_dragging = false
+	_focus_camera_on_castle()
+	if main_camera != null:
+		main_camera.zoom = current_zoom
+	if _semantic_runtime_view != null and main_camera != null:
+		_semantic_runtime_view.request_visual_coverage_for_camera_position(main_camera.global_position)
+		_semantic_runtime_view.refresh_now()
+
+
 func _on_reset_map_pressed() -> void:
 	reset_semantic_world()
+
+
+func _sync_random_map_seed_from_semantic_identity() -> void:
+	if _bootstrapped_semantic_identity == null:
+		return
+	if not _bootstrapped_semantic_identity.is_valid():
+		return
+	random_map_seed = int(_bootstrapped_semantic_identity.seed)
+
+
+func _get_next_semantic_reset_seed() -> int:
+	var base_seed: int = random_map_seed
+	if _bootstrapped_semantic_identity != null and _bootstrapped_semantic_identity.is_valid():
+		base_seed = int(_bootstrapped_semantic_identity.seed)
+	if base_seed >= WorldGenerationIdentityScript.INT64_MAX_VALUE:
+		return WorldGenerationIdentityScript.INT64_MIN_VALUE + 1
+	return base_seed + 1
 
 
 func debug_stage7_get_regions_by_id() -> Dictionary:
@@ -826,6 +1552,14 @@ func debug_stage7_get_regions_by_id() -> Dictionary:
 
 func debug_stage7_has_semantic_query_bridge() -> bool:
 	return _semantic_gameplay_query_bridge != null
+
+
+func _get_villager_navigation_terrain(cell: Vector2i) -> int:
+	if _semantic_gameplay_query_bridge != null:
+		var terrain_type: int = int(_semantic_gameplay_query_bridge.get_terrain(cell))
+		if terrain_type != VILLAGER_NAVIGATION_TERRAIN_MISS:
+			return terrain_type
+	return super._get_villager_navigation_terrain(cell)
 
 
 func debug_stage7_get_semantic_terrain(cell: Vector2i) -> int:

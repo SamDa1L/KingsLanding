@@ -12,6 +12,14 @@ enum VillagerState {
 	WANDERING,
 }
 
+const RESOURCE_TASK_STATE_GOING_TO_RESOURCE := &"going_to_resource"
+const RESOURCE_TASK_STATE_COLLECTING := &"collecting"
+const RESOURCE_TASK_STATE_RETURNING_TO_BUILDING := &"returning_to_building"
+const RESOURCE_TASK_STATE_DELIVERING := &"delivering"
+const RESOURCE_TASK_STATE_RESTING := &"resting"
+const RESOURCE_TYPE_WOOD := &"wood"
+const RESOURCE_TYPE_STONE := &"stone"
+
 @export var move_speed: float = 55.0
 @export var minimum_work_minutes: float = 90.0
 @export var rest_duration_minutes: float = 30.0
@@ -22,12 +30,25 @@ enum VillagerState {
 @export var wander_radius: float = 96.0
 @export var show_status_label: bool = true
 
+var work_duration: float:
+	get:
+		return minimum_work_minutes
+	set(value):
+		minimum_work_minutes = max(value, 0.0)
+
 @onready var animated_sprite: AnimatedSprite2D = $AnimatedSprite2D
 @onready var status_label: Label = $StatusLabel
 
 var current_state: VillagerState = VillagerState.IDLE
 var _target_position: Vector2 = Vector2.ZERO
 var _state_timer: float = 0.0
+var _resource_work_status_text: String = ""
+var _resource_work_status_color: Color = Color(1.0, 1.0, 1.0, 0.92)
+var _resource_task_animation_state: StringName = &""
+var _resource_task_animation_resource_type: StringName = &""
+var _resource_task_animation_carried_amount: float = 0.0
+var _resource_task_animation_has_facing_override: bool = false
+var _resource_task_animation_facing_left: bool = false
 var _route_ready: bool = false
 var _pending_initialization: bool = false
 var _pending_start_delay: float = 0.0
@@ -37,6 +58,10 @@ var _wander_target: Vector2 = Vector2.ZERO
 var _wander_pause_timer: float = 0.0
 var _wander_center: Vector2 = Vector2.ZERO
 var _wander_mode: bool = false
+var _route_builder: Callable = Callable()
+var _wander_target_builder: Callable = Callable()
+var _navigation_points: Array[Vector2] = []
+var _navigation_index: int = 0
 
 
 func _ready() -> void:
@@ -47,11 +72,13 @@ func _ready() -> void:
 	_update_status_label()
 
 
-func setup_route(home: Vector2, work: Vector2, start_delay: float = 0.0) -> void:
+func setup_route(home: Vector2, work: Vector2, start_delay: float = 0.0, route_builder: Callable = Callable()) -> void:
 	_wander_mode = false
 	home_position = home
 	work_position = work
 	position = home_position
+	_set_route_builder(route_builder)
+	_clear_navigation_path()
 	_route_ready = true
 	_pending_start_delay = max(start_delay, 0.0)
 	_pending_initialization = true
@@ -60,7 +87,14 @@ func setup_route(home: Vector2, work: Vector2, start_delay: float = 0.0) -> void
 		_initialize_route()
 
 
-func setup_idle_wander(anchor: Vector2, wander_bounds: Rect2, start_delay: float = 0.0, next_wander_radius: float = 96.0) -> void:
+func setup_idle_wander(
+	anchor: Vector2,
+	wander_bounds: Rect2,
+	start_delay: float = 0.0,
+	next_wander_radius: float = 96.0,
+	route_builder: Callable = Callable(),
+	wander_target_builder: Callable = Callable()
+) -> void:
 	_wander_mode = true
 	home_position = anchor
 	work_position = anchor
@@ -68,6 +102,9 @@ func setup_idle_wander(anchor: Vector2, wander_bounds: Rect2, start_delay: float
 	wander_radius = max(next_wander_radius, 8.0)
 	_wander_bounds = wander_bounds
 	_wander_center = wander_bounds.get_center()
+	_set_route_builder(route_builder)
+	_set_wander_target_builder(wander_target_builder)
+	_clear_navigation_path()
 	_route_ready = true
 	_pending_start_delay = max(start_delay, 0.0)
 	_pending_initialization = true
@@ -75,23 +112,98 @@ func setup_idle_wander(anchor: Vector2, wander_bounds: Rect2, start_delay: float
 		_initialize_wander()
 
 
-func retarget_to_work(home: Vector2, work: Vector2) -> void:
+func retarget_to_work(home: Vector2, work: Vector2, route_builder: Callable = Callable()) -> void:
 	_wander_mode = false
 	home_position = home
 	work_position = work
+	_set_route_builder(route_builder)
+	_clear_navigation_path()
 	_route_ready = true
 	_pending_initialization = false
 	_pending_start_delay = 0.0
 	_set_state(VillagerState.GOING_TO_WORK)
 
 
-func retarget_to_idle(anchor: Vector2, wander_bounds: Rect2, next_wander_radius: float = 96.0) -> void:
+func set_work_duration_minutes(next_duration: float) -> void:
+	minimum_work_minutes = max(next_duration, 0.0)
+	if current_state == VillagerState.WORKING:
+		_state_timer = minimum_work_minutes
+
+
+func update_work_cycle_targets(home: Vector2, work: Vector2, route_builder: Callable = Callable()) -> void:
+	home_position = home
+	work_position = work
+	_set_route_builder(route_builder)
+	_route_ready = true
+	match current_state:
+		VillagerState.GOING_TO_WORK:
+			_target_position = work_position
+			_rebuild_navigation_path(_target_position)
+		VillagerState.WORKING:
+			_target_position = work_position
+			_clear_navigation_path()
+		VillagerState.RETURNING_HOME:
+			_target_position = home_position
+			_rebuild_navigation_path(_target_position)
+		VillagerState.RESTING:
+			_target_position = home_position
+			_clear_navigation_path()
+
+
+func force_return_home_from_work() -> void:
+	if current_state == VillagerState.GOING_TO_WORK or current_state == VillagerState.WORKING or current_state == VillagerState.RETURNING_HOME:
+		_set_state(VillagerState.RETURNING_HOME)
+
+
+func set_resource_work_status(text: String, color: Color = Color(1.0, 1.0, 1.0, 0.92)) -> void:
+	_resource_work_status_text = text
+	_resource_work_status_color = color
+	_update_status_label()
+
+
+func clear_resource_work_status() -> void:
+	_resource_work_status_text = ""
+	_update_status_label()
+
+
+func set_resource_task_animation_state(task_state: StringName, resource_type: StringName, carried_amount: float = 0.0) -> void:
+	_resource_task_animation_state = task_state
+	_resource_task_animation_resource_type = resource_type
+	_resource_task_animation_carried_amount = max(carried_amount, 0.0)
+	_refresh_resource_task_animation()
+
+
+func set_resource_task_animation_facing_override(has_override: bool, facing_left: bool = false) -> void:
+	_resource_task_animation_has_facing_override = has_override
+	_resource_task_animation_facing_left = facing_left
+	_refresh_resource_task_animation()
+
+
+func clear_resource_task_animation_state() -> void:
+	_resource_task_animation_state = &""
+	_resource_task_animation_resource_type = &""
+	_resource_task_animation_carried_amount = 0.0
+	_resource_task_animation_has_facing_override = false
+	_resource_task_animation_facing_left = false
+	_refresh_resource_task_animation()
+
+
+func retarget_to_idle(
+	anchor: Vector2,
+	wander_bounds: Rect2,
+	next_wander_radius: float = 96.0,
+	route_builder: Callable = Callable(),
+	wander_target_builder: Callable = Callable()
+) -> void:
 	_wander_mode = true
 	home_position = anchor
 	work_position = anchor
 	wander_radius = max(next_wander_radius, 8.0)
 	_wander_bounds = wander_bounds
 	_wander_center = wander_bounds.get_center()
+	_set_route_builder(route_builder)
+	_set_wander_target_builder(wander_target_builder)
+	_clear_navigation_path()
 	_route_ready = true
 	_pending_initialization = false
 	_pending_start_delay = 0.0
@@ -116,6 +228,24 @@ func get_state_name() -> StringName:
 			return &"unknown"
 
 
+func get_work_cycle_state_name() -> StringName:
+	match current_state:
+		VillagerState.IDLE:
+			return &"idle"
+		VillagerState.GOING_TO_WORK:
+			return &"going_to_work"
+		VillagerState.WORKING:
+			return &"working"
+		VillagerState.RETURNING_HOME:
+			return &"returning_home"
+		VillagerState.RESTING:
+			return &"resting"
+		VillagerState.WANDERING:
+			return &"wandering"
+		_:
+			return &"unknown"
+
+
 func is_assigned_to_work() -> bool:
 	return current_state == VillagerState.GOING_TO_WORK or current_state == VillagerState.WORKING or current_state == VillagerState.RETURNING_HOME or current_state == VillagerState.RESTING
 
@@ -133,6 +263,8 @@ func is_locked_to_work_cycle() -> bool:
 
 
 func get_status_label_text() -> String:
+	if not _resource_work_status_text.is_empty():
+		return _resource_work_status_text
 	match current_state:
 		VillagerState.IDLE:
 			return "待命"
@@ -212,14 +344,27 @@ func _tick_wait(delta: float, next_state: VillagerState) -> void:
 
 
 func _move_to_target(delta: float, next_state: VillagerState) -> void:
-	var to_target := _target_position - position
-	if to_target.length() <= arrival_distance:
-		position = _target_position
-		_set_state(next_state)
-		return
-
-	position = position.move_toward(_target_position, move_speed * delta)
-	_play_walk_animation(to_target)
+	_ensure_navigation_path(_target_position)
+	var remaining_distance: float = move_speed * delta
+	var last_direction: Vector2 = Vector2.ZERO
+	while remaining_distance > 0.0:
+		var next_navigation_target: Vector2 = _get_active_navigation_target(_target_position)
+		var to_target := next_navigation_target - position
+		var distance_to_target: float = to_target.length()
+		if distance_to_target <= arrival_distance:
+			position = next_navigation_target
+			if _advance_navigation_target():
+				continue
+			_set_state(next_state)
+			return
+		var step_distance: float = minf(remaining_distance, distance_to_target)
+		position = position.move_toward(next_navigation_target, step_distance)
+		remaining_distance -= step_distance
+		last_direction = to_target
+		if step_distance + arrival_distance < distance_to_target:
+			break
+	if last_direction != Vector2.ZERO:
+		_play_walk_animation(last_direction)
 
 
 func _tick_wander(delta: float) -> void:
@@ -231,11 +376,38 @@ func _tick_wander(delta: float) -> void:
 
 	if position.distance_to(_wander_target) <= arrival_distance:
 		_wander_pause_timer = randf_range(0.4, 1.2)
+		_clear_navigation_path()
 		_play_idle_animation()
 		return
 
-	position = position.move_toward(_wander_target, move_speed * delta)
-	_play_walk_animation(_wander_target - position)
+	_ensure_navigation_path(_wander_target)
+	var remaining_distance: float = move_speed * delta
+	var last_direction: Vector2 = Vector2.ZERO
+	while remaining_distance > 0.0:
+		var next_navigation_target: Vector2 = _get_active_navigation_target(_wander_target)
+		var to_target := next_navigation_target - position
+		var distance_to_target: float = to_target.length()
+		if distance_to_target <= arrival_distance:
+			position = next_navigation_target
+			if _advance_navigation_target():
+				continue
+			if position.distance_to(_wander_target) <= arrival_distance:
+				_wander_pause_timer = randf_range(0.4, 1.2)
+				_clear_navigation_path()
+				_play_idle_animation()
+				return
+			_rebuild_navigation_path(_wander_target)
+			if _navigation_points.is_empty():
+				break
+			continue
+		var step_distance: float = minf(remaining_distance, distance_to_target)
+		position = position.move_toward(next_navigation_target, step_distance)
+		remaining_distance -= step_distance
+		last_direction = to_target
+		if step_distance + arrival_distance < distance_to_target:
+			break
+	if last_direction != Vector2.ZERO:
+		_play_walk_animation(last_direction)
 
 
 func _set_state(next_state: VillagerState, override_duration: float = -1.0) -> void:
@@ -244,20 +416,25 @@ func _set_state(next_state: VillagerState, override_duration: float = -1.0) -> v
 	match current_state:
 		VillagerState.IDLE:
 			_target_position = home_position
+			_clear_navigation_path()
 			_state_timer = override_duration if override_duration >= 0.0 else idle_duration
 			_play_idle_animation()
 		VillagerState.GOING_TO_WORK:
 			_target_position = work_position
+			_rebuild_navigation_path(_target_position)
 			_play_walk_animation(work_position - position)
 		VillagerState.WORKING:
 			_target_position = work_position
+			_clear_navigation_path()
 			_state_timer = override_duration if override_duration >= 0.0 else minimum_work_minutes
 			_play_idle_animation()
 		VillagerState.RETURNING_HOME:
 			_target_position = home_position
+			_rebuild_navigation_path(_target_position)
 			_play_walk_animation(home_position - position)
 		VillagerState.RESTING:
 			_target_position = home_position
+			_clear_navigation_path()
 			_state_timer = override_duration if override_duration >= 0.0 else rest_duration_minutes
 			_play_idle_animation()
 
@@ -268,6 +445,7 @@ func _set_state(next_state: VillagerState, override_duration: float = -1.0) -> v
 func _set_wander_state(start_pause: bool, override_duration: float = -1.0) -> void:
 	current_state = VillagerState.WANDERING
 	_wander_pause_timer = override_duration if override_duration >= 0.0 else idle_duration
+	_clear_navigation_path()
 	_pick_next_wander_target()
 	if not start_pause:
 		_wander_pause_timer = 0.0
@@ -279,7 +457,14 @@ func _pick_next_wander_target() -> void:
 	var center := _wander_center
 	if _wander_bounds.size != Vector2.ZERO:
 		center = _wander_bounds.get_center()
+	if _wander_target_builder.is_valid():
+		var built_target: Variant = _wander_target_builder.call(position, center, wander_radius, _wander_bounds)
+		if typeof(built_target) == TYPE_VECTOR2:
+			_wander_target = built_target
+			_rebuild_navigation_path(_wander_target)
+			return
 	_wander_target = _clamp_to_wander_bounds(center + Vector2(randf_range(-wander_radius, wander_radius), randf_range(-wander_radius, wander_radius)))
+	_rebuild_navigation_path(_wander_target)
 
 
 func _clamp_to_wander_bounds(target: Vector2) -> Vector2:
@@ -290,7 +475,68 @@ func _clamp_to_wander_bounds(target: Vector2) -> Vector2:
 	return Vector2(clampf(target.x, min_corner.x, max_corner.x), clampf(target.y, min_corner.y, max_corner.y))
 
 
+func _set_route_builder(route_builder: Callable) -> void:
+	if route_builder.is_valid():
+		_route_builder = route_builder
+
+
+func _set_wander_target_builder(wander_target_builder: Callable) -> void:
+	if wander_target_builder.is_valid():
+		_wander_target_builder = wander_target_builder
+
+
+func _clear_navigation_path() -> void:
+	_navigation_points.clear()
+	_navigation_index = 0
+
+
+func _ensure_navigation_path(final_target: Vector2) -> void:
+	if not _navigation_points.is_empty():
+		return
+	_rebuild_navigation_path(final_target)
+
+
+func _rebuild_navigation_path(final_target: Vector2) -> void:
+	_clear_navigation_path()
+	if not _route_builder.is_valid():
+		return
+	var route_variant: Variant = _route_builder.call(position, final_target)
+	if typeof(route_variant) != TYPE_ARRAY:
+		return
+	var route_points: Array = route_variant
+	for route_point_variant in route_points:
+		if typeof(route_point_variant) != TYPE_VECTOR2:
+			continue
+		var route_point: Vector2 = route_point_variant
+		if route_point.distance_to(position) <= arrival_distance * 0.5:
+			continue
+		if not _navigation_points.is_empty() and route_point.distance_to(_navigation_points[_navigation_points.size() - 1]) <= 0.01:
+			continue
+		_navigation_points.append(route_point)
+
+
+func _get_active_navigation_target(final_target: Vector2) -> Vector2:
+	if _navigation_index >= 0 and _navigation_index < _navigation_points.size():
+		return _navigation_points[_navigation_index]
+	return final_target
+
+
+func _advance_navigation_target() -> bool:
+	while _navigation_index < _navigation_points.size():
+		_navigation_index += 1
+		if _navigation_index >= _navigation_points.size():
+			_clear_navigation_path()
+			return false
+		if position.distance_to(_navigation_points[_navigation_index]) > arrival_distance:
+			return true
+	_clear_navigation_path()
+	return false
+
+
 func _play_idle_animation() -> void:
+	if _play_resource_task_idle_animation_if_needed():
+		return
+
 	if _play_animation_if_available([&"idle"]):
 		animated_sprite.flip_h = false
 		return
@@ -309,6 +555,8 @@ func _play_walk_animation(direction: Vector2) -> void:
 		_last_horizontal_sign = 1.0
 	else:
 		facing_left = _last_horizontal_sign < 0.0
+	if _play_resource_task_walk_animation_if_needed(facing_left):
+		return
 
 	if _play_animation_if_available([&"walk_left" if facing_left else &"walk_right"]):
 		animated_sprite.flip_h = false
@@ -326,7 +574,80 @@ func _play_walk_animation(direction: Vector2) -> void:
 	animated_sprite.flip_h = facing_left
 
 
+func _refresh_resource_task_animation() -> void:
+	match current_state:
+		VillagerState.GOING_TO_WORK, VillagerState.RETURNING_HOME:
+			_play_walk_animation(_target_position - position)
+		VillagerState.WORKING, VillagerState.RESTING, VillagerState.IDLE:
+			_play_idle_animation()
+
+
+func _play_resource_task_idle_animation_if_needed() -> bool:
+	if _resource_task_animation_state == RESOURCE_TASK_STATE_COLLECTING:
+		return _play_resource_collect_animation()
+	if _resource_task_animation_state == RESOURCE_TASK_STATE_RETURNING_TO_BUILDING or _resource_task_animation_state == RESOURCE_TASK_STATE_DELIVERING:
+		if _resource_task_animation_carried_amount > 0.0:
+			return _play_resource_carried_idle_animation()
+	if _resource_task_animation_state == RESOURCE_TASK_STATE_GOING_TO_RESOURCE:
+		return _play_resource_tool_idle_animation()
+	return false
+
+
+func _play_resource_task_walk_animation_if_needed(facing_left: bool) -> bool:
+	var animation_name: StringName = _get_resource_task_walk_animation_name()
+	if animation_name == &"":
+		return false
+	if not _play_animation_if_available([animation_name]):
+		return false
+	animated_sprite.flip_h = facing_left
+	return true
+
+
+func _play_resource_collect_animation() -> bool:
+	var played: bool = false
+	if _resource_task_animation_resource_type == RESOURCE_TYPE_WOOD:
+		played = _play_animation_if_available([&"interact_axe", &"idle_axe"])
+	elif _resource_task_animation_resource_type == RESOURCE_TYPE_STONE:
+		played = _play_animation_if_available([&"interact_pickaxe", &"idle_pickaxe"])
+	if played and _resource_task_animation_has_facing_override:
+		animated_sprite.flip_h = _resource_task_animation_facing_left
+	return played
+
+
+func _play_resource_tool_idle_animation() -> bool:
+	if _resource_task_animation_resource_type == RESOURCE_TYPE_WOOD:
+		return _play_animation_if_available([&"idle_axe", &"idle"])
+	if _resource_task_animation_resource_type == RESOURCE_TYPE_STONE:
+		return _play_animation_if_available([&"idle_pickaxe", &"idle"])
+	return false
+
+
+func _play_resource_carried_idle_animation() -> bool:
+	if _resource_task_animation_resource_type == RESOURCE_TYPE_WOOD:
+		return _play_animation_if_available([&"idle_withWood", &"idle"])
+	if _resource_task_animation_resource_type == RESOURCE_TYPE_STONE:
+		return _play_animation_if_available([&"idle_withStone", &"idle"])
+	return false
+
+
+func _get_resource_task_walk_animation_name() -> StringName:
+	if _resource_task_animation_state == RESOURCE_TASK_STATE_RETURNING_TO_BUILDING or _resource_task_animation_state == RESOURCE_TASK_STATE_DELIVERING:
+		if _resource_task_animation_carried_amount > 0.0:
+			if _resource_task_animation_resource_type == RESOURCE_TYPE_WOOD:
+				return &"run_withWood"
+			if _resource_task_animation_resource_type == RESOURCE_TYPE_STONE:
+				return &"run_withStone"
+	if _resource_task_animation_state == RESOURCE_TASK_STATE_GOING_TO_RESOURCE:
+		if _resource_task_animation_resource_type == RESOURCE_TYPE_WOOD:
+			return &"run_axe"
+		if _resource_task_animation_resource_type == RESOURCE_TYPE_STONE:
+			return &"run_pickaxe"
+	return &""
+
+
 func _play_animation(animation_name: StringName) -> void:
+	if animated_sprite == null:
+		return
 	if animated_sprite.sprite_frames == null:
 		return
 	if not animated_sprite.sprite_frames.has_animation(animation_name):
@@ -337,6 +658,8 @@ func _play_animation(animation_name: StringName) -> void:
 
 
 func _play_animation_if_available(animation_names: Array) -> bool:
+	if animated_sprite == null:
+		return false
 	if animated_sprite.sprite_frames == null:
 		return false
 
@@ -388,6 +711,9 @@ func _update_status_label() -> void:
 	var next_text := get_status_label_text()
 	status_label.visible = show_status_label and not next_text.is_empty()
 	status_label.text = next_text
+	if not _resource_work_status_text.is_empty():
+		status_label.modulate = _resource_work_status_color
+		return
 	match current_state:
 		VillagerState.WORKING:
 			status_label.modulate = Color(0.90, 1.0, 0.78, 1.0)
